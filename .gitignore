@@ -1,0 +1,25 @@
+# Dependencies
+node_modules/
+
+# Cloudflare Wrangler local state & dev environment
+.wrangler/
+.dev.vars
+
+# Build outputs
+dist/
+
+# OS and IDE files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Legacy binary archives & local data
+*.zip
+*.zip.*
+*.exe
+*.dll
+*.pak
+*.asar
+Data/
+ModeerDashboard-win/
