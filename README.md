@@ -61,3 +61,10 @@ npx wrangler d1 execute modeer-db --remote --file=migrations/0002_seed_legacy_da
 3. Select `mohamadosama/modeer`.
 4. In Project Settings, ensure the D1 Database `modeer-db` is bound as `DB`.
 5. Every `git push` to `main` will automatically build and deploy to your `*.workers.dev` URL.
+
+---
+
+## Documentation
+
+* [Cloudflare Zero Trust (Access) & Google Authentication Guide](file:///home/mosama/projects/modeer/docs/ZERO_TRUST_SETUP.md): Step-by-step instructions on setting up Zero Trust, Google login integration, role mapping, and limitations.
+
