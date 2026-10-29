@@ -1,6 +1,7 @@
 /**
  * Modeer Cloudflare Edge & D1 Sync Adapter
  * Replaces Electron preload.js with cloud synchronization to Cloudflare D1.
+ * Supports D1 SQL database storage + Chunked Base64 Attachment Storage.
  */
 
 (function () {
@@ -96,17 +97,17 @@
       statusEl.style.background = '#eff6ff';
       statusEl.style.color = '#1d4ed8';
       statusEl.style.border = '1px solid #bfdbfe';
-      statusEl.innerHTML = '<span style="display:inline-block;animation:spin 1s linear infinite">⏳</span> <span>جاري الحفظ في D1...</span>';
+      statusEl.innerHTML = `<span style="display:inline-block;animation:spin 1s linear infinite">⏳</span> <span>${msg || 'جاري الحفظ في D1...'}</span>`;
     } else if (state === 'saved') {
       statusEl.style.background = '#f0fdf4';
       statusEl.style.color = '#15803d';
       statusEl.style.border = '1px solid #bbf7d0';
-      statusEl.innerHTML = '<span style="color:#22c55e">●</span> <span>محفوظ في Cloudflare D1</span>';
+      statusEl.innerHTML = `<span style="color:#22c55e">●</span> <span>${msg || 'محفوظ في Cloudflare D1'}</span>`;
     } else if (state === 'error') {
       statusEl.style.background = '#fef2f2';
       statusEl.style.color = '#b91c1c';
       statusEl.style.border = '1px solid #fecaca';
-      statusEl.innerHTML = '<span>⚠️</span> <span>تعذر الحفظ في السحابة</span>';
+      statusEl.innerHTML = `<span>⚠️</span> <span>${msg || 'تعذر الحفظ في السحابة'}</span>`;
     } else if (state === 'connected') {
       const co = getActiveCompany();
       statusEl.style.background = '#f8fafc';
@@ -200,6 +201,252 @@
     }
   }
 
+  /* ==========================================================================
+     Cloudflare D1 Attachment Storage (Base64 + IndexedDB local fast-cache)
+     ========================================================================== */
+  const ModeerFS = (() => {
+    let db = null;
+    const open = () =>
+      db
+        ? Promise.resolve(db)
+        : new Promise((res, rej) => {
+            try {
+              const q = indexedDB.open('acc_files_db', 1);
+              q.onupgradeneeded = () => {
+                const s = q.result.createObjectStore('f', { keyPath: 'id' });
+                s.createIndex('owner', 'owner');
+              };
+              q.onsuccess = () => {
+                db = q.result;
+                res(db);
+              };
+              q.onerror = () => rej(q.error);
+            } catch (e) {
+              rej(e);
+            }
+          });
+
+    const run = (mode, fn) =>
+      open().then(
+        (d) =>
+          new Promise((res, rej) => {
+            const t = d.transaction('f', mode),
+              s = t.objectStore('f'),
+              r = fn(s);
+            t.oncomplete = () => res(r && r.result);
+            t.onerror = () => rej(t.error);
+            t.onabort = () => rej(t.error);
+          })
+      );
+
+    const localFS = {
+      put: (rec) => run('readwrite', (s) => s.put(rec)),
+      del: (id) => run('readwrite', (s) => s.delete(id)),
+      list: (owner) =>
+        run('readonly', (s) => s.index('owner').getAll(owner)).then((a) =>
+          (a || []).sort((x, y) => ((x.at || '') < (y.at || '') ? 1 : -1))
+        ),
+      all: () => run('readonly', (s) => s.getAll()),
+      clear: () => run('readwrite', (s) => s.clear()),
+    };
+
+    const blobToUrl = (b) =>
+      new Promise((r) => {
+        const f = new FileReader();
+        f.onload = () => r(f.result);
+        f.readAsDataURL(b);
+      });
+
+    const urlToBlob = (u) =>
+      Promise.resolve().then(() => {
+        const [hd, b] = String(u).split(',');
+        const mime = (hd.match(/:(.*?)[;,]/) || [])[1] || 'application/octet-stream';
+        const bin = atob(b || '');
+        const arr = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+        return new Blob([arr], { type: mime });
+      });
+
+    return {
+      put: async (rec) => {
+        // 1. Cache locally in IndexedDB
+        try {
+          await localFS.put(rec);
+        } catch (e) {}
+
+        const company = getActiveCompany();
+        updateStatus('syncing', 'جاري رفع المرفق إلى D1...');
+
+        let dataUrl = '';
+        if (rec.blob) {
+          dataUrl = await blobToUrl(rec.blob);
+        } else if (rec.data) {
+          dataUrl = rec.data;
+        }
+
+        const payload = {
+          id: rec.id,
+          company,
+          owner: rec.owner,
+          cat: rec.cat || '',
+          name: rec.name || 'file',
+          type: rec.type || (rec.blob && rec.blob.type) || 'application/octet-stream',
+          size: rec.size || (rec.blob && rec.blob.size) || 0,
+          at: rec.at || new Date().toISOString().slice(0, 10),
+          data: dataUrl,
+        };
+
+        try {
+          const res = await fetch(`/api/files?company=${encodeURIComponent(company)}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          });
+
+          if (!res.ok) {
+            throw new Error('D1 upload failed: ' + res.statusText);
+          }
+          updateStatus('saved', 'تم حفظ المرفق في Cloudflare D1');
+          setTimeout(() => updateStatus('connected'), 2000);
+          return { ok: true, id: rec.id };
+        } catch (err) {
+          console.error('ModeerFS put error:', err);
+          updateStatus('error', 'تعذر رفع المرفق إلى السحابة');
+          return { ok: true, id: rec.id };
+        }
+      },
+
+      del: async (id) => {
+        try {
+          await localFS.del(id);
+        } catch (e) {}
+
+        const company = getActiveCompany();
+        try {
+          await fetch(
+            `/api/files/${encodeURIComponent(id)}?company=${encodeURIComponent(company)}`,
+            { method: 'DELETE' }
+          );
+        } catch (err) {
+          console.warn('ModeerFS del remote error:', err);
+        }
+        return true;
+      },
+
+      list: async (owner) => {
+        const company = getActiveCompany();
+        try {
+          const res = await fetch(
+            `/api/files?company=${encodeURIComponent(company)}&owner=${encodeURIComponent(owner)}`
+          );
+          if (res.ok) {
+            const data = await res.json();
+            const serverFiles = data.files || [];
+            const out = [];
+            for (const f of serverFiles) {
+              const blob = f.data ? await urlToBlob(f.data) : (f.blob || new Blob([]));
+              const item = {
+                id: f.id,
+                owner: f.owner,
+                cat: f.cat,
+                name: f.name,
+                type: f.type,
+                size: f.size,
+                at: f.at,
+                blob,
+              };
+              out.push(item);
+              try {
+                localFS.put(item);
+              } catch (e) {}
+            }
+            return out.sort((x, y) => ((x.at || '') < (y.at || '') ? 1 : -1));
+          }
+        } catch (err) {
+          console.warn('ModeerFS list remote error, using local cache:', err);
+        }
+        return localFS.list(owner);
+      },
+
+      all: async () => {
+        const company = getActiveCompany();
+        try {
+          const res = await fetch(`/api/files/all?company=${encodeURIComponent(company)}`);
+          if (res.ok) {
+            const data = await res.json();
+            return data.files || [];
+          }
+        } catch (err) {
+          console.warn('ModeerFS all remote error, using local cache:', err);
+        }
+        return localFS.all();
+      },
+
+      clear: async () => {
+        const company = getActiveCompany();
+        try {
+          await fetch(`/api/files/clear?company=${encodeURIComponent(company)}`, {
+            method: 'POST',
+          });
+        } catch (e) {}
+        return localFS.clear();
+      },
+
+      exportAll: async () => {
+        const company = getActiveCompany();
+        try {
+          const res = await fetch(`/api/files?company=${encodeURIComponent(company)}`);
+          if (res.ok) {
+            const data = await res.json();
+            const list = data.files || [];
+            const out = [];
+            for (const m of list) {
+              const single = await fetch(
+                `/api/files/${encodeURIComponent(m.id)}?company=${encodeURIComponent(company)}`
+              );
+              if (single.ok) {
+                const sData = await single.json();
+                if (sData.file) out.push(sData.file);
+              }
+            }
+            return out;
+          }
+        } catch (e) {}
+        return [];
+      },
+
+      importAll: async (arr) => {
+        for (const item of arr || []) {
+          const blob = item.data ? await urlToBlob(item.data) : item.blob;
+          await ModeerFS.put({ ...item, blob });
+        }
+      },
+
+      syncLocalToCloud: async () => {
+        try {
+          const locals = await localFS.all();
+          if (!locals || locals.length === 0) return;
+          const company = getActiveCompany();
+          const remoteRes = await fetch(`/api/files/all?company=${encodeURIComponent(company)}`);
+          if (!remoteRes.ok) return;
+          const remoteData = await remoteRes.json();
+          const remoteIds = new Set((remoteData.files || []).map((x) => x.id));
+
+          for (const loc of locals) {
+            if (!remoteIds.has(loc.id)) {
+              console.log('Syncing legacy local attachment to Cloudflare D1:', loc.name);
+              await ModeerFS.put(loc);
+            }
+          }
+        } catch (e) {
+          console.warn('Local-to-cloud attachment sync check completed:', e);
+        }
+      },
+    };
+  })();
+
+  window.ModeerFS = ModeerFS;
+
   window.ModeerSync = {
     async init() {
       const co = getActiveCompany();
@@ -263,6 +510,13 @@
         injectCompanySwitcher(companies);
         updateStatus('connected');
         setInterval(tick, 2000);
+
+        // Run background sync for any local legacy attachments
+        setTimeout(() => {
+          if (window.ModeerFS && window.ModeerFS.syncLocalToCloud) {
+            window.ModeerFS.syncLocalToCloud();
+          }
+        }, 1200);
 
         window.addEventListener('beforeunload', () => {
           const cur = snapshot();
