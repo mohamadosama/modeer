@@ -80,6 +80,32 @@
         }
       },
       dsInfo: () => Promise.resolve({ dir: 'Cloudflare D1 Edge', portable: true }),
+      discardEmpty: () => Promise.resolve({ ok: true }),
+      renameSelf: () => {
+        const n = prompt('اسم الشركة الجديد:');
+        if (n && n.trim()) setActiveCompany(n.trim());
+        return Promise.resolve({ ok: true });
+      },
+      deleteSelf: () => Promise.resolve({ ok: false, msg: 'الحذف متاح للمدير من إدارة البيانات' }),
+    };
+
+    window.desktopCo = {
+      list: async () => {
+        try {
+          const res = await fetch('/api/companies');
+          const data = await res.json();
+          return {
+            cur: company,
+            list: (data.companies || []).map((c) => ({ name: c.id, label: c.name || c.id })),
+          };
+        } catch (e) {
+          return { cur: company, list: [{ name: company, label: company }] };
+        }
+      },
+      open: async (name) => {
+        setActiveCompany(name);
+        return { ok: true };
+      },
     };
   }
 
