@@ -1,6 +1,7 @@
 /**
  * Modeer Cloudflare Worker
  * Bridges Modeer SPA frontend with Cloudflare D1 database.
+ * Includes server-side session authentication & RBAC protection.
  */
 
 function corsHeaders(request) {
@@ -9,6 +10,7 @@ function corsHeaders(request) {
     'Access-Control-Allow-Origin': origin,
     'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With',
+    'Access-Control-Allow-Credentials': 'true',
     'Access-Control-Max-Age': '86400',
   };
 }
@@ -21,6 +23,72 @@ function jsonResponse(data, status = 200, extraHeaders = {}) {
       ...extraHeaders,
     },
   });
+}
+
+/**
+ * Verify user password against stored PBKDF2 hash
+ */
+async function verifyPassword(password, pwRecord) {
+  if (!pwRecord || !pwRecord.salt || !pwRecord.hash) return false;
+  try {
+    const salt = Uint8Array.from(atob(pwRecord.salt), (c) => c.charCodeAt(0));
+    const iter = pwRecord.iter || 120000;
+    const encoder = new TextEncoder();
+    const keyMaterial = await crypto.subtle.importKey(
+      'raw',
+      encoder.encode(password),
+      'PBKDF2',
+      false,
+      ['deriveBits']
+    );
+    const derivedBits = await crypto.subtle.deriveBits(
+      {
+        name: 'PBKDF2',
+        hash: 'SHA-256',
+        salt,
+        iterations: iter,
+      },
+      keyMaterial,
+      256
+    );
+    const hashBase64 = btoa(String.fromCharCode(...new Uint8Array(derivedBits)));
+    return hashBase64 === pwRecord.hash;
+  } catch (e) {
+    return false;
+  }
+}
+
+/**
+ * Extract session token from cookie or Authorization header
+ */
+function getSessionToken(request) {
+  const cookieHeader = request.headers.get('Cookie') || '';
+  const match = cookieHeader.match(/modeer_session=([a-zA-Z0-9_\-]+)/);
+  if (match) return match[1];
+
+  const authHeader = request.headers.get('Authorization') || '';
+  if (authHeader.startsWith('Bearer ')) {
+    return authHeader.slice(7).trim();
+  }
+
+  return null;
+}
+
+/**
+ * Validate session against D1 sessions table
+ */
+async function authenticateRequest(request, env) {
+  const token = getSessionToken(request);
+  if (!token) return null;
+
+  try {
+    const session = await env.DB.prepare(
+      'SELECT token, company, user_id, username, role, expires_at FROM sessions WHERE token = ? AND expires_at > datetime("now")'
+    ).bind(token).first();
+    return session || null;
+  } catch (e) {
+    return null;
+  }
 }
 
 export default {
@@ -41,7 +109,103 @@ export default {
           return jsonResponse({ status: 'ok', edge: true, time: new Date().toISOString() }, 200, cors);
         }
 
-        // List companies
+        // ----------------- Auth API -----------------
+
+        // 1. Login endpoint (server-side verification)
+        if (url.pathname === '/api/auth/login' && request.method === 'POST') {
+          const body = await request.json().catch(() => ({}));
+          const username = String(body.username || '').trim();
+          const password = String(body.password || '');
+          const company = String(body.company || '').trim() || 'Tijarahub';
+
+          if (!username || !password) {
+            return jsonResponse({ error: 'Username and password are required' }, 400, cors);
+          }
+
+          // Fetch users list from D1 for this company
+          const row = await env.DB.prepare(
+            'SELECT value FROM company_storage WHERE company = ? AND key = ?'
+          ).bind(company, 'acc_users').first();
+
+          if (!row || !row.value) {
+            return jsonResponse({ error: 'اسم المستخدم أو كلمة السر غير صحيحة' }, 401, cors);
+          }
+
+          let users = [];
+          try {
+            users = typeof row.value === 'string' ? JSON.parse(row.value) : row.value;
+          } catch (e) {
+            return jsonResponse({ error: 'اسم المستخدم أو كلمة السر غير صحيحة' }, 401, cors);
+          }
+
+          const user = users.find(
+            (u) => u.name && u.name.toLowerCase() === username.toLowerCase()
+          );
+
+          if (!user) {
+            return jsonResponse({ error: 'اسم المستخدم أو كلمة السر غير صحيحة' }, 401, cors);
+          }
+
+          const valid = await verifyPassword(password, user.pw);
+          if (!valid) {
+            return jsonResponse({ error: 'اسم المستخدم أو كلمة السر غير صحيحة' }, 401, cors);
+          }
+
+          // Generate random session token
+          const token = crypto.randomUUID().replace(/-/g, '') + crypto.randomUUID().replace(/-/g, '');
+          const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(); // 7 days
+
+          await env.DB.prepare(
+            'INSERT INTO sessions (token, company, user_id, username, role, expires_at) VALUES (?, ?, ?, ?, ?, ?)'
+          ).bind(token, company, String(user.id), user.name, user.role || 'admin', expiresAt).run();
+
+          const cookie = `modeer_session=${token}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=604800`;
+
+          return jsonResponse(
+            {
+              success: true,
+              user: { id: user.id, name: user.name, role: user.role || 'admin' },
+              company,
+              token,
+            },
+            200,
+            {
+              ...cors,
+              'Set-Cookie': cookie,
+            }
+          );
+        }
+
+        // 2. Current user session verification
+        if (url.pathname === '/api/auth/me' && request.method === 'GET') {
+          const session = await authenticateRequest(request, env);
+          if (!session) {
+            return jsonResponse({ authenticated: false }, 200, cors);
+          }
+          return jsonResponse(
+            {
+              authenticated: true,
+              user: { id: session.user_id, name: session.username, role: session.role },
+              company: session.company,
+            },
+            200,
+            cors
+          );
+        }
+
+        // 3. Logout endpoint
+        if (url.pathname === '/api/auth/logout' && request.method === 'POST') {
+          const token = getSessionToken(request);
+          if (token) {
+            await env.DB.prepare('DELETE FROM sessions WHERE token = ?').bind(token).run().catch(() => {});
+          }
+          const clearCookie = `modeer_session=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0`;
+          return jsonResponse({ success: true }, 200, { ...cors, 'Set-Cookie': clearCookie });
+        }
+
+        // ----------------- Company Management -----------------
+
+        // List companies (public list of company names for selector)
         if (url.pathname === '/api/companies' && request.method === 'GET') {
           const { results } = await env.DB.prepare(
             'SELECT id, name, base_currency, created_at FROM companies ORDER BY name ASC'
@@ -49,8 +213,13 @@ export default {
           return jsonResponse({ companies: results || [] }, 200, cors);
         }
 
-        // Create company
+        // Create company (requires active session)
         if (url.pathname === '/api/companies' && request.method === 'POST') {
+          const session = await authenticateRequest(request, env);
+          if (!session) {
+            return jsonResponse({ error: 'Authentication required' }, 401, cors);
+          }
+
           const body = await request.json().catch(() => ({}));
           const id = String(body.id || body.name || '').trim().slice(0, 50);
           const name = String(body.name || id).trim().slice(0, 80);
@@ -67,9 +236,16 @@ export default {
           return jsonResponse({ success: true, company: { id, name, base_currency: baseCurrency } }, 201, cors);
         }
 
-        // Fetch company data
+        // ----------------- Protected Company Data API -----------------
+
+        // Fetch company data (PROTECTED: requires active session)
         if (url.pathname === '/api/data' && request.method === 'GET') {
-          const company = url.searchParams.get('company') || 'Tijarahub';
+          const session = await authenticateRequest(request, env);
+          if (!session) {
+            return jsonResponse({ error: 'Authentication required. Please log in.' }, 401, cors);
+          }
+
+          const company = url.searchParams.get('company') || session.company || 'Tijarahub';
           const { results } = await env.DB.prepare(
             'SELECT key, value FROM company_storage WHERE company = ?'
           ).bind(company).all();
@@ -84,9 +260,14 @@ export default {
           return jsonResponse({ company, count: Object.keys(data).length, data }, 200, cors);
         }
 
-        // Save company data (full or delta snapshot)
+        // Save company data (PROTECTED: requires active session)
         if (url.pathname === '/api/data' && (request.method === 'POST' || request.method === 'PUT')) {
-          const company = url.searchParams.get('company') || 'Tijarahub';
+          const session = await authenticateRequest(request, env);
+          if (!session) {
+            return jsonResponse({ error: 'Authentication required. Please log in.' }, 401, cors);
+          }
+
+          const company = url.searchParams.get('company') || session.company || 'Tijarahub';
           const body = await request.json().catch(() => ({}));
           const payload = body.data || body;
 
@@ -119,11 +300,16 @@ export default {
           return jsonResponse({ success: true, company, updated: entries.length }, 200, cors);
         }
 
-        // ----------------- Attachments API -----------------
+        // ----------------- Protected Attachments API -----------------
 
-        // 1. Get attachment counts
+        // 1. Get attachment counts (PROTECTED)
         if (url.pathname === '/api/files/counts' && request.method === 'GET') {
-          const company = url.searchParams.get('company') || 'Tijarahub';
+          const session = await authenticateRequest(request, env);
+          if (!session) {
+            return jsonResponse({ error: 'Authentication required' }, 401, cors);
+          }
+
+          const company = url.searchParams.get('company') || session.company || 'Tijarahub';
           const { results } = await env.DB.prepare(
             'SELECT owner, COUNT(*) as cnt FROM attachments WHERE company = ? GROUP BY owner'
           ).bind(company).all();
@@ -134,18 +320,28 @@ export default {
           return jsonResponse({ counts }, 200, cors);
         }
 
-        // 2. Get lightweight all attachments list (for ID and owner mapping)
+        // 2. Get lightweight all attachments list (PROTECTED)
         if (url.pathname === '/api/files/all' && request.method === 'GET') {
-          const company = url.searchParams.get('company') || 'Tijarahub';
+          const session = await authenticateRequest(request, env);
+          if (!session) {
+            return jsonResponse({ error: 'Authentication required' }, 401, cors);
+          }
+
+          const company = url.searchParams.get('company') || session.company || 'Tijarahub';
           const { results } = await env.DB.prepare(
             'SELECT id, owner FROM attachments WHERE company = ?'
           ).bind(company).all();
           return jsonResponse({ files: results || [] }, 200, cors);
         }
 
-        // 3. Clear all attachments for company
+        // 3. Clear all attachments for company (PROTECTED - admin only)
         if (url.pathname === '/api/files/clear' && request.method === 'POST') {
-          const company = url.searchParams.get('company') || 'Tijarahub';
+          const session = await authenticateRequest(request, env);
+          if (!session || session.role !== 'admin') {
+            return jsonResponse({ error: 'Admin permission required' }, 403, cors);
+          }
+
+          const company = url.searchParams.get('company') || session.company || 'Tijarahub';
           await env.DB.prepare(
             'DELETE FROM attachment_chunks WHERE attachment_id IN (SELECT id FROM attachments WHERE company = ?)'
           ).bind(company).run();
@@ -153,9 +349,14 @@ export default {
           return jsonResponse({ success: true, company }, 200, cors);
         }
 
-        // 4. List attachments for an owner (with data chunks) or all metadata
+        // 4. List attachments (PROTECTED)
         if (url.pathname === '/api/files' && request.method === 'GET') {
-          const company = url.searchParams.get('company') || 'Tijarahub';
+          const session = await authenticateRequest(request, env);
+          if (!session) {
+            return jsonResponse({ error: 'Authentication required' }, 401, cors);
+          }
+
+          const company = url.searchParams.get('company') || session.company || 'Tijarahub';
           const owner = url.searchParams.get('owner');
 
           if (!owner) {
@@ -193,8 +394,13 @@ export default {
           return jsonResponse({ files }, 200, cors);
         }
 
-        // 5. Get single attachment by ID (including data)
+        // 5. Get single attachment by ID (PROTECTED)
         if (url.pathname.startsWith('/api/files/') && request.method === 'GET') {
+          const session = await authenticateRequest(request, env);
+          if (!session) {
+            return jsonResponse({ error: 'Authentication required' }, 401, cors);
+          }
+
           const id = decodeURIComponent(url.pathname.replace('/api/files/', ''));
           const meta = await env.DB.prepare(
             'SELECT id, company, owner, cat, name, type, size, at FROM attachments WHERE id = ?'
@@ -212,10 +418,15 @@ export default {
           return jsonResponse({ file: { ...meta, data: fullData } }, 200, cors);
         }
 
-        // 6. Save / upload attachment (chunked Base64)
+        // 6. Save / upload attachment (chunked Base64) (PROTECTED)
         if (url.pathname === '/api/files' && request.method === 'POST') {
+          const session = await authenticateRequest(request, env);
+          if (!session) {
+            return jsonResponse({ error: 'Authentication required' }, 401, cors);
+          }
+
           const body = await request.json().catch(() => ({}));
-          const company = url.searchParams.get('company') || body.company || 'Tijarahub';
+          const company = url.searchParams.get('company') || session.company || 'Tijarahub';
           const id = String(body.id || ('f_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7)));
           const owner = String(body.owner || '').trim();
           const name = String(body.name || 'file').trim();
@@ -258,8 +469,13 @@ export default {
           return jsonResponse({ success: true, id, owner }, 201, cors);
         }
 
-        // 7. Delete attachment by ID
+        // 7. Delete attachment by ID (PROTECTED)
         if (url.pathname.startsWith('/api/files/') && request.method === 'DELETE') {
+          const session = await authenticateRequest(request, env);
+          if (!session) {
+            return jsonResponse({ error: 'Authentication required' }, 401, cors);
+          }
+
           const id = decodeURIComponent(url.pathname.replace('/api/files/', ''));
           await env.DB.prepare('DELETE FROM attachment_chunks WHERE attachment_id = ?').bind(id).run();
           await env.DB.prepare('DELETE FROM attachments WHERE id = ?').bind(id).run();
