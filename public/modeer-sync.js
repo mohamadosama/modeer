@@ -33,7 +33,8 @@
     const o = {};
     for (let i = 0; i < localStorage.length; i++) {
       const k = localStorage.key(i);
-      if (k && (k.startsWith('acc_') || k.startsWith('disk_') || k.startsWith('co_'))) {
+      // Exclude acc_users so routine autosync never accidentally overwrites server credentials
+      if (k && k !== 'acc_users' && (k.startsWith('acc_') || k.startsWith('disk_') || k.startsWith('co_'))) {
         o[k] = localStorage.getItem(k);
       }
     }
@@ -609,11 +610,32 @@
           if (!autosyncTimer) {
             autosyncTimer = setInterval(tick, 2000);
           }
+
+          window.dispatchEvent(
+            new CustomEvent('modeer:auth', {
+              detail: { user: data.user, company: co },
+            })
+          );
+
           return { ok: true, user: data.user, users: [data.user] };
         }
         return { ok: false, msg: data.error || 'اسم المستخدم أو كلمة السر غير صحيحة' };
       } catch (e) {
         return { ok: false, msg: 'تعذر الاتصال بالخادم. يرجى المحاولة مرة أخرى.' };
+      }
+    },
+
+    async saveUsers(users) {
+      const co = getActiveCompany();
+      try {
+        await fetch(`/api/data?company=${encodeURIComponent(co)}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ data: { acc_users: typeof users === 'string' ? users : JSON.stringify(users) } }),
+        });
+        return true;
+      } catch (e) {
+        return false;
       }
     },
 
@@ -687,6 +709,12 @@
         if (!autosyncTimer) {
           autosyncTimer = setInterval(tick, 2000);
         }
+
+        window.dispatchEvent(
+          new CustomEvent('modeer:auth', {
+            detail: { user: session.user, company: co },
+          })
+        );
 
         // Run background sync for local legacy attachments
         setTimeout(() => {
