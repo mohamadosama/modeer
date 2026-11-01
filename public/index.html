@@ -3932,7 +3932,7 @@ function toggleExt(){var cur=!appEl()||appEl().classList.contains('ux-noext');tr
 
 function palette(){
  var ex=document.getElementById('ux-pal');if(ex){ex.remove();return;}
- var N=window.UXNAV;if(!N)return;var all=N.items.map(function(x){return{k:x[0],t:x[1],g:x[2]};});
+ var N=window.UXNAV;if(!N)return;var all=N.items.map(function(x){return{k:x[0],t:x[1],g:x[2]};});all.push({k:"__bot",t:lang()==="en"?"🤖 AI Bot Guide (Testing & Manual)":"🤖 دليل الروبوت والأتمتة (AI Bot Guide)",g:lang()==="en"?"System":"النظام"});
  var back=document.createElement('div');back.className='ux-pal-back';back.id='ux-pal';back.dir=lang()==='en'?'ltr':'rtl';
  var box=document.createElement('div');box.className='ux-pal';back.appendChild(box);
  var inp=document.createElement('input');inp.placeholder=t('ph');box.appendChild(inp);
@@ -3941,7 +3941,7 @@ function palette(){
  function draw(){ul.textContent='';if(!cur.length){var li=document.createElement('li');li.textContent=t('none');ul.appendChild(li);return;}
   cur.forEach(function(x,i){var li=document.createElement('li');if(i===sel)li.className='sel';li.appendChild(document.createTextNode(x.t));var sm=document.createElement('small');sm.textContent=x.g;li.appendChild(sm);
    li.onclick=function(){go(x);};li.onmouseenter=function(){sel=i;[].forEach.call(ul.children,function(c,j){c.className=j===i?'sel':'';});};ul.appendChild(li);});}
- function go(x){back.remove();window.UXNAV.go(x.k);}
+ function go(x){back.remove();if(x.k==="__bot"){window.open("/bot-guide.html","_blank");return;}window.UXNAV.go(x.k);}
  inp.oninput=function(){var q=inp.value.trim().toLowerCase();cur=all.filter(function(x){return !q||(x.t+' '+x.g).toLowerCase().indexOf(q)>=0;});sel=0;draw();};
  inp.onkeydown=function(e){if(e.key==='Escape'){back.remove();}else if(e.key==='ArrowDown'){sel=Math.min(cur.length-1,sel+1);draw();e.preventDefault();}else if(e.key==='ArrowUp'){sel=Math.max(0,sel-1);draw();e.preventDefault();}else if(e.key==='Enter'&&cur[sel]){go(cur[sel]);}};
  back.onclick=function(e){if(e.target===back)back.remove();};
@@ -4329,6 +4329,7 @@ function devOpen(){css();var old=document.getElementById('ux-dev');if(old)old.re
  btn(row,tx('📚 المكتبات (React, Recharts, XLSX)','📚 Libraries (React, Recharts, XLSX)'),function(){var S=scripts();var t='';S.all.forEach(function(x,i){if(S.ai<0||i<S.ai){var h=x.textContent.slice(0,100).replace(/\s+/g,' ');t+=sep('lib '+(i+1)+' — '+h,x.textContent);}});save('MODEER-libraries.js',t||'/* none */','text/javascript;charset=utf-8');},'dev-libs');
  btn(row,tx('🗂 قاموس البيانات (JSON)','🗂 Data dictionary (JSON)'),function(){var o={app:'MODEER',version:ver,exported:new Date().toISOString(),keys:[]};try{for(var i=0;i<localStorage.length;i++){var k=localStorage.key(i);if(!/^acc_/.test(k))continue;var v=localStorage.getItem(k)||'',p=null,ty='string';try{p=JSON.parse(v);ty=Array.isArray(p)?'array['+p.length+']':(p&&typeof p==='object'?'object{'+Object.keys(p).slice(0,12).join(',')+'}':typeof p);}catch(e){}var smp=Array.isArray(p)&&p.length?p[0]:null;o.keys.push({key:k,bytes:v.length,type:ty,sampleItem:smp&&JSON.stringify(smp).length<1500?smp:undefined});}}catch(e){}o.keys.sort(function(a,b){return b.bytes-a.bytes;});save('MODEER-data-dictionary.json',JSON.stringify(o,null,2),'application/json;charset=utf-8');},'dev-dict');
  btn(row,tx('📘 دليل المطوّر (Markdown)','📘 Developer guide (Markdown)'),function(){save('MODEER-developer-guide.md',guide(),'text/markdown;charset=utf-8');},'dev-guide');
+ btn(row,tx('🤖 دليل الروبوت والأتمتة (HTML)','🤖 AI Bot Guide (HTML)'),function(){window.open('/bot-guide.html','_blank');},'dev-bot');
  var c2=card(tx('هيكل النظام باختصار','Architecture at a glance'));
  var ul=E('ul');(ar?[
  'الواجهة: React يعمل داخل ملف HTML واحد، والرسوم عبر Recharts، وملفات Excel عبر SheetJS (كلها مضمّنة، لا حاجة لإنترنت).',
@@ -4435,9 +4436,10 @@ bal:function(){return rect(8,22,48,32,'G',7)+path('M8 29 q0-7 7-7 h34 q7 0 7 7z'
 emp:function(){return circ(32,22,10,'W')+path('M10 54 q0-20 22-20 q22 0 22 20z','W')+rect(24,40,16,4,'B',2)+path('M28 34 l4 7 l4-7z','R');},
 alr:function(){return path('M32 6 q-16 2-16 20 v10 l-6 8 h44 l-6-8 V26 q0-18-16-20z','Y')+circ(32,10,3.5,'O')+path('M25 48 q7 10 14 0z','O')+'<path d="M22 22 q2-8 10-9" stroke="#fff" stroke-width="2.6" fill="none" stroke-linecap="round" opacity=".8"/>';},
 rec:function(){return rect(9,12,46,42,'W',6)+path('M9 20 q0-8 8-8 h30 q8 0 8 8 v6 H9z','O')+rect(18,7,4,11,'#445',2)+rect(42,7,4,11,'#445',2)+arrow('M41 38 A9 9 0 0 0 24 36','#2e69dc',3.4)+path('M20 33 l8 1 l-5 7z','#2e69dc')+arrow('M23 44 A9 9 0 0 0 40 46','#1b9b53',3.4)+path('M44 49 l-8 -1 l5 -7z','#1b9b53');},
-about:function(){return circ(32,32,23,'W')+circ(32,19,3.6,'#2e69dc')+rect(28,26,8,22,'#2e69dc',3);}
+about:function(){return circ(32,32,23,'W')+circ(32,19,3.6,'#2e69dc')+rect(28,26,8,22,'#2e69dc',3);},
+__bot:function(){return circ(32,32,22,'W')+rect(18,20,28,24,'B',6)+circ(26,30,4,'W')+circ(38,30,4,'W')+rect(24,38,16,3,'Y',1.5)+rect(30,12,4,8,'O',2)+circ(32,10,3,'R');}
 };
-var BLUE=['bud','emp','alr','rec','bal','entry','open','jv','rcpt','ppl','ccard','fa','mkt','pos','sd','subsc','par','shp','wh','mf','hr','coa','co','qs','guide','data','audit','users'];
+var BLUE=['__bot','bud','emp','alr','rec','bal','entry','open','jv','rcpt','ppl','ccard','fa','mkt','pos','sd','subsc','par','shp','wh','mf','hr','coa','co','qs','guide','data','audit','users'];
 function svg(k){var f=I[k];var body=f?f():I.about();return '<svg viewBox="0 0 64 64" width="100%" height="100%" aria-hidden="true" focusable="false"><g filter="url(#uxsh)">'+body+'</g></svg>';}
 function tone(k){if(k==='__about'||k==='__dev'||k==='about')return 'slate';return BLUE.indexOf(k)>=0?'blue':'green';}
 var BG={blue:'linear-gradient(160deg,#5b97ff 0%,#2a62e8 100%)',green:'linear-gradient(160deg,#35d97a 0%,#0f9b4e 100%)',slate:'linear-gradient(160deg,#8a99b5 0%,#44526d 100%)'};
@@ -4446,8 +4448,8 @@ window.UXICON={svg:svg,bg:function(k){return BG[tone(k)];},ensure:ensureDefs,key
 if(document.body)ensureDefs();else document.addEventListener('DOMContentLoaded',ensureDefs);
 })();
 
-var ICONEN={'emp':'Employees','alr':'Alerts','bal':'Cash, Banks & Balances','rec':'Recurring Entries',"entry": "Data Entry", "open": "Opening Balances", "jv": "Journal Entries", "cash": "Cash & Bank", "rcpt": "Receipts", "fxr": "FX Revaluation", "ppl": "Prepayments", "ccard": "Credit Cards", "bud": "Budget", "fa": "Fixed Assets", "mkt": "Marketing", "pos": "Point of Sale", "sd": "Sales Documents", "subsc": "Subscriptions", "par": "Partners", "trd": "Trading", "shp": "Shipments", "imp": "Import Operations", "wh": "Warehouse", "mf": "Manufacturing", "pay": "Payroll", "hr": "HR & Leave", "pan": "Dashboard", "tb": "Trial Balance", "stmt": "Statements", "ias": "IAS 1 / IAS 18 Statements", "ycmp": "Year comparison", "cfi": "Cash Flow (IAS 7)", "cf": "Cash Flow", "gl": "General Ledger", "kpi": "KPIs", "gfx": "Charts", "fc": "Forecast", "cons": "Consolidated", "adv": "Advanced Analysis", "xl": "Excel Reports", "coa": "Chart of Accounts", "cur": "Currencies", "co": "Companies", "qs": "Quick Start", "guide": "User Guide", "data": "Data & Backup", "audit": "Audit Log", "users": "Users & Roles", "__about": "About MODEER"};
-var ICON={__dev:'🛠',entry:'✍️',open:'📂',jv:'📒',cash:'💵',rcpt:'🧾',fxr:'💱',ppl:'🅿️',ccard:'💳',bud:'🎯',fa:'🏢',mkt:'📣',pos:'🛒',sd:'📄',subsc:'🔁',par:'🤝',trd:'📈',shp:'🚢',wh:'📦',mf:'🏭',pay:'💰',hr:'🗓️',pan:'📊',tb:'⚖️',stmt:'📑',cf:'🌊',cfi:'🌊',kpi:'🎯',gfx:'📉',fc:'🔮',adv:'🧮',xl:'📚',gl:'📖',coa:'🗂️',cur:'🪙',co:'🏷️',qs:'⚡',guide:'❓',data:'💾',audit:'🔍',users:'👥'};
+var ICONEN={'__bot':'AI Bot Guide','emp':'Employees','alr':'Alerts','bal':'Cash, Banks & Balances','rec':'Recurring Entries',"entry": "Data Entry", "open": "Opening Balances", "jv": "Journal Entries", "cash": "Cash & Bank", "rcpt": "Receipts", "fxr": "FX Revaluation", "ppl": "Prepayments", "ccard": "Credit Cards", "bud": "Budget", "fa": "Fixed Assets", "mkt": "Marketing", "pos": "Point of Sale", "sd": "Sales Documents", "subsc": "Subscriptions", "par": "Partners", "trd": "Trading", "shp": "Shipments", "imp": "Import Operations", "wh": "Warehouse", "mf": "Manufacturing", "pay": "Payroll", "hr": "HR & Leave", "pan": "Dashboard", "tb": "Trial Balance", "stmt": "Statements", "ias": "IAS 1 / IAS 18 Statements", "ycmp": "Year comparison", "cfi": "Cash Flow (IAS 7)", "cf": "Cash Flow", "gl": "General Ledger", "kpi": "KPIs", "gfx": "Charts", "fc": "Forecast", "cons": "Consolidated", "adv": "Advanced Analysis", "xl": "Excel Reports", "coa": "Chart of Accounts", "cur": "Currencies", "co": "Companies", "qs": "Quick Start", "guide": "User Guide", "data": "Data & Backup", "audit": "Audit Log", "users": "Users & Roles", "__about": "About MODEER"};
+var ICON={__bot:'🤖',__dev:'🛠',entry:'✍️',open:'📂',jv:'📒',cash:'💵',rcpt:'🧾',fxr:'💱',ppl:'🅿️',ccard:'💳',bud:'🎯',fa:'🏢',mkt:'📣',pos:'🛒',sd:'📄',subsc:'🔁',par:'🤝',trd:'📈',shp:'🚢',wh:'📦',mf:'🏭',pay:'💰',hr:'🗓️',pan:'📊',tb:'⚖️',stmt:'📑',cf:'🌊',cfi:'🌊',kpi:'🎯',gfx:'📉',fc:'🔮',adv:'🧮',xl:'📚',gl:'📖',coa:'🗂️',cur:'🪙',co:'🏷️',qs:'⚡',guide:'❓',data:'💾',audit:'🔍',users:'👥'};
 var HUE=[['#4f8cff','#2563eb'],['#34d399','#059669'],['#fbbf24','#d97706'],['#a78bfa','#7c3aed'],['#f472b6','#db2777'],['#94a3b8','#475569'],['#22d3ee','#0891b2']];
 function css(){if(document.getElementById('uxh-css'))return;var s=document.createElement('style');s.id='uxh-css';s.textContent=[
 '.uxh{position:fixed;inset:0;z-index:350;overflow:auto;background:linear-gradient(135deg,#e9e7f5 0%,#f4f5fb 48%,#e3edf8 100%);font-family:inherit;color:#0f172a}',
@@ -4488,7 +4490,7 @@ function open(ev){var edit=ev===true;var HV=(window.UX&&window.UX.hv)?window.UX.
  top.appendChild(lg);
   var x=E('button','uxh-x','✕');x.type='button';x.title=t('close');x.setAttribute('aria-label',t('close'));x.onclick=close;top.appendChild(x);ov.appendChild(top);
  var body=E('div','uxh-body'+((edit||!HV.d)?' uxh-wide':''));var wrap=E('div','uxh-wrap');if(HV.h)wrap.appendChild(body);if(!HV.h)q.style.display='none';var dh=null;ov.appendChild(wrap);var scb=E('div','uxh-sc');[['▲',-1],['▼',1]].forEach(function(p){var bt=E('button','',p[0]);bt.type='button';bt.setAttribute('data-ux',p[1]<0?'home-top':'home-bottom');bt.onclick=function(){var tg=ov.querySelector('.uxd-host');if(!tg||tg.scrollHeight<=tg.clientHeight+4)tg=ov.querySelector('.uxh-body');if(!tg||tg.scrollHeight<=tg.clientHeight+4)tg=ov;tg.scrollTo({top:p[1]<0?0:tg.scrollHeight,behavior:'smooth'});};scb.appendChild(bt);});ov.appendChild(scb);
- var all=N.items.slice();var sysn=lang()==='en'?'System':'النظام';if(window.UXABOUT)all.push(['__about',window.UXABOUT.label(),sysn]);if(window.UXABOUT&&N.admin)all.push(['__dev',lang()==='en'?'Developer':'المطوّر',sysn]);
+ var all=N.items.slice();var sysn=lang()==='en'?'System':'النظام';all.push(['__bot',lang()==='en'?'🤖 AI Bot Guide':'🤖 دليل الروبوت',sysn]);if(window.UXABOUT)all.push(['__about',window.UXABOUT.label(),sysn]);if(window.UXABOUT&&N.admin)all.push(['__dev',lang()==='en'?'Developer':'المطوّر',sysn]);
  var LK='acc_homelay',en0=lang()==='en';var lay={g:[],h:[]};try{lay=Object.assign(lay,JSON.parse(localStorage.getItem(LK)||'{}'));}catch(e){}
  lay.h=lay.h||[];lay.g=lay.g||[];if(!lay.v){lay.g.forEach(function(g){g.keys=(g.keys||[]).filter(function(k){return k!=='fa';});});lay.v=2;}var byK={};all.forEach(function(it){byK[it[0]]=it;});
  var groups=[],used={};
@@ -4506,7 +4508,7 @@ function open(ev){var edit=ev===true;var HV=(window.UX&&window.UX.hv)?window.UX.
    var hx=E('span','uxh-hx','×');hx.title=en0?'Hide':'إخفاء';hx.onclick=function(e){e.stopPropagation();e.preventDefault();lay.h.push(k);persist();close();open(true);};b.appendChild(hx);
    var mv=E('span','uxh-mv');var l=E('span','','◀'),r=E('span','','▶');l.onclick=function(e){e.stopPropagation();e.preventDefault();var p=b.previousElementSibling;if(p)b.parentNode.insertBefore(b,p);persist();};r.onclick=function(e){e.stopPropagation();e.preventDefault();var n=b.nextElementSibling;if(n)b.parentNode.insertBefore(n,b);persist();};mv.appendChild(r);mv.appendChild(l);b.appendChild(mv);
    b.onclick=function(e){e.preventDefault();};}
-  else b.onclick=function(){close();if(k==='__about')window.UXABOUT.open();else if(k==='__dev')window.UXABOUT.dev();else N.go(k);};
+  else b.onclick=function(){close();if(k==='__bot')window.open('/bot-guide.html','_blank');else if(k==='__about')window.UXABOUT.open();else if(k==='__dev')window.UXABOUT.dev();else N.go(k);};
   return b;}
  groups.forEach(function(g,idx){var sec=E('section','uxh-g');sec.setAttribute('data-n',g.n);var grid=E('div','uxh-grid');
   if(edit){var hd=E('div','uxh-gh');var inp=E('input','uxh-gn');inp.value=g.n;inp.oninput=persist;hd.appendChild(inp);

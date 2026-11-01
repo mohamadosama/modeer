@@ -116,6 +116,8 @@
       statusEl.id = 'modeer-cloud-status';
       statusEl.style.cssText =
         'position:fixed;bottom:10px;left:12px;z-index:999999;font-family:system-ui,-apple-system,sans-serif;font-size:12px;padding:5px 12px;border-radius:20px;display:flex;align-items:center;gap:6px;box-shadow:0 2px 10px rgba(0,0,0,0.12);transition:all 0.3s ease;pointer-events:auto;cursor:pointer;';
+      statusEl.title = 'حالة اتصال سحابة D1 — انقر لفتح دليل الأتمتة والروبوت';
+      statusEl.onclick = () => window.open('/bot-guide.html', '_blank');
       document.body.appendChild(statusEl);
     }
 
@@ -148,7 +150,7 @@
     const nav = document.createElement('div');
     nav.id = 'modeer-company-nav';
     nav.style.cssText =
-      'position:fixed;top:8px;left:12px;z-index:999999;display:flex;align-items:center;gap:6px;background:rgba(255,255,255,0.92);backdrop-filter:blur(6px);border:1px solid #cbd5e1;padding:4px 8px;border-radius:20px;font-family:system-ui,-apple-system,sans-serif;font-size:12px;box-shadow:0 2px 8px rgba(0,0,0,0.06);direction:rtl;';
+      'position:fixed;top:8px;left:12px;z-index:999999;display:flex;align-items:center;gap:6px;background:rgba(255,255,255,0.94);backdrop-filter:blur(6px);border:1px solid #cbd5e1;padding:4px 8px;border-radius:20px;font-family:system-ui,-apple-system,sans-serif;font-size:12px;box-shadow:0 2px 8px rgba(0,0,0,0.06);direction:rtl;';
 
     const label = document.createElement('span');
     label.textContent = 'الشركة:';
@@ -190,6 +192,33 @@
     };
 
     nav.appendChild(sel);
+
+    // Separator
+    const sep = document.createElement('span');
+    sep.style.cssText = 'color:#94a3b8;font-size:11px;margin:0 2px;';
+    sep.textContent = '•';
+    nav.appendChild(sep);
+
+    // AI Bot Guide shortcut button
+    const botBtn = document.createElement('a');
+    botBtn.id = 'modeer-bot-guide-btn';
+    botBtn.href = '/bot-guide.html';
+    botBtn.target = '_blank';
+    botBtn.rel = 'noopener noreferrer';
+    botBtn.title = 'دليل الروبوت والتشغيل الآلي (AI Bot Testing & Automation Guide)';
+    botBtn.style.cssText =
+      'display:inline-flex;align-items:center;gap:4px;padding:3px 10px;background:linear-gradient(135deg,#2563eb,#1d4ed8);color:#fff;border-radius:14px;text-decoration:none;font-weight:700;font-size:11.5px;box-shadow:0 2px 6px rgba(37,99,235,0.3);transition:all .15s ease;cursor:pointer;';
+    botBtn.innerHTML = '<span>🤖</span> <span>دليل الروبوت والـ AI</span>';
+    botBtn.onmouseenter = () => {
+      botBtn.style.transform = 'translateY(-1px)';
+      botBtn.style.boxShadow = '0 3px 8px rgba(37,99,235,0.45)';
+    };
+    botBtn.onmouseleave = () => {
+      botBtn.style.transform = 'none';
+      botBtn.style.boxShadow = '0 2px 6px rgba(37,99,235,0.3)';
+    };
+    nav.appendChild(botBtn);
+
     document.body.appendChild(nav);
   }
 

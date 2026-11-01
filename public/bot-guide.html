@@ -1,0 +1,1029 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Modeer AI Bot Testing & Operational Guide | دليل اختبار وأتمتة مدير</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800;900&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --primary: #1b4166;
+      --primary-dark: #0f263e;
+      --accent: #2563eb;
+      --accent-hover: #1d4ed8;
+      --bg: #f8fafc;
+      --card: #ffffff;
+      --border: #e2e8f0;
+      --text: #0f172a;
+      --text-muted: #64748b;
+      --success: #15803d;
+      --success-bg: #f0fdf4;
+      --warning: #b45309;
+      --warning-bg: #fffbeb;
+      --danger: #b91c1c;
+      --danger-bg: #fef2f2;
+      --code-bg: #0f172a;
+      --code-text: #e2e8f0;
+      --sidebar-width: 290px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Cairo', system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.7;
+      display: flex;
+      min-height: 100vh;
+    }
+
+    /* Sidebar Navigation */
+    #sidebar {
+      width: var(--sidebar-width);
+      background: var(--card);
+      border-inline-end: 1px solid var(--border);
+      position: fixed;
+      top: 0;
+      bottom: 0;
+      right: 0;
+      overflow-y: auto;
+      padding: 24px 16px;
+      z-index: 100;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 20px;
+    }
+    .brand-icon {
+      font-size: 26px;
+      background: #eff6ff;
+      border: 1px solid #bfdbfe;
+      width: 44px;
+      height: 44px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 12px;
+    }
+    .brand-title {
+      font-weight: 800;
+      font-size: 16px;
+      color: var(--primary);
+      line-height: 1.2;
+    }
+    .brand-subtitle {
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+    .search-box {
+      margin-bottom: 16px;
+      position: relative;
+    }
+    .search-box input {
+      width: 100%;
+      padding: 8px 32px 8px 12px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      font-size: 13px;
+      font-family: inherit;
+      outline: none;
+      background: #f1f5f9;
+    }
+    .search-box input:focus {
+      border-color: var(--accent);
+      background: #fff;
+    }
+    .search-icon {
+      position: absolute;
+      right: 10px;
+      top: 8px;
+      font-size: 14px;
+      color: var(--text-muted);
+    }
+    .nav-section-title {
+      font-size: 11px;
+      font-weight: 800;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      margin: 16px 8px 6px;
+      letter-spacing: 0.5px;
+    }
+    .nav-link {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 7px 12px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      color: #334155;
+      text-decoration: none;
+      transition: all 0.15s;
+    }
+    .nav-link:hover, .nav-link.active {
+      background: #eff6ff;
+      color: var(--accent);
+    }
+    .nav-link code {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      background: #f1f5f9;
+      padding: 2px 5px;
+      border-radius: 4px;
+      margin-inline-start: auto;
+      color: var(--primary);
+    }
+
+    /* Main Content Area */
+    #main-content {
+      margin-right: var(--sidebar-width);
+      flex: 1;
+      padding: 32px 48px;
+      max-width: 1100px;
+    }
+
+    /* Top Bar */
+    .top-actions {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 30px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid var(--border);
+    }
+    .back-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 16px;
+      background: var(--primary);
+      color: #fff;
+      font-weight: 700;
+      font-size: 13px;
+      border-radius: 20px;
+      text-decoration: none;
+      transition: background 0.2s;
+    }
+    .back-btn:hover { background: var(--primary-dark); }
+    .badge-edge {
+      background: #ecfdf5;
+      color: #047857;
+      border: 1px solid #a7f3d0;
+      font-size: 12px;
+      font-weight: 700;
+      padding: 4px 10px;
+      border-radius: 20px;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    /* Typography & Headers */
+    h1 { font-size: 28px; font-weight: 900; color: var(--primary); margin-bottom: 8px; }
+    h2 { font-size: 20px; font-weight: 800; color: var(--primary); margin: 36px 0 16px; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px; }
+    h3 { font-size: 16px; font-weight: 700; color: #1e293b; margin: 20px 0 10px; }
+    p { margin-bottom: 14px; font-size: 14.5px; color: #334155; }
+
+    /* Alert & Note Boxes */
+    .alert {
+      padding: 14px 18px;
+      border-radius: 12px;
+      margin: 18px 0;
+      font-size: 13.5px;
+      border: 1px solid transparent;
+      line-height: 1.6;
+    }
+    .alert-info { background: #eff6ff; border-color: #bfdbfe; color: #1e40af; }
+    .alert-warning { background: var(--warning-bg); border-color: #fde68a; color: #92400e; }
+    .alert-danger { background: var(--danger-bg); border-color: #fecaca; color: #991b1b; }
+    .alert-success { background: var(--success-bg); border-color: #bbf7d0; color: #166534; }
+    .alert-title { font-weight: 800; margin-bottom: 4px; display: flex; align-items: center; gap: 6px; }
+
+    /* Tables */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 18px 0;
+      font-size: 13.5px;
+      background: var(--card);
+      border-radius: 10px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+    }
+    th {
+      background: #f1f5f9;
+      color: #334155;
+      font-weight: 700;
+      padding: 10px 14px;
+      text-align: right;
+      border-bottom: 1px solid var(--border);
+    }
+    td {
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--border);
+      vertical-align: top;
+    }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: #f8fafc; }
+
+    /* Code Blocks */
+    code {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12.5px;
+      background: #e2e8f0;
+      padding: 2px 6px;
+      border-radius: 4px;
+      color: #0f172a;
+    }
+    pre {
+      background: var(--code-bg);
+      color: var(--code-text);
+      padding: 16px;
+      border-radius: 12px;
+      overflow-x: auto;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 13px;
+      line-height: 1.6;
+      margin: 14px 0;
+      direction: ltr;
+      text-align: left;
+    }
+    pre code { background: transparent; color: inherit; padding: 0; }
+
+    /* Steps & Workflow Cards */
+    .workflow-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 22px;
+      margin-bottom: 24px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+    }
+    .workflow-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 14px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid #f1f5f9;
+    }
+    .workflow-title {
+      font-size: 17px;
+      font-weight: 800;
+      color: var(--primary);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .step-list {
+      list-style: none;
+      counter-reset: step-counter;
+      margin: 12px 0;
+    }
+    .step-list li {
+      counter-increment: step-counter;
+      position: relative;
+      padding-inline-start: 36px;
+      margin-bottom: 12px;
+      font-size: 14px;
+    }
+    .step-list li::before {
+      content: counter(step-counter);
+      position: absolute;
+      right: 0;
+      top: 0;
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      background: #eff6ff;
+      color: var(--accent);
+      border: 1px solid #bfdbfe;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 12px;
+    }
+
+    .key-badge {
+      display: inline-block;
+      padding: 2px 8px;
+      background: #f1f5f9;
+      border: 1px solid #cbd5e1;
+      border-radius: 6px;
+      font-weight: 700;
+      font-size: 12px;
+      font-family: 'JetBrains Mono', monospace;
+      color: #1e293b;
+    }
+
+    /* Copy Button */
+    .copy-btn {
+      font-family: inherit;
+      font-size: 12px;
+      font-weight: 700;
+      background: #f1f5f9;
+      border: 1px solid #cbd5e1;
+      padding: 4px 10px;
+      border-radius: 6px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      transition: all 0.2s;
+    }
+    .copy-btn:hover { background: #e2e8f0; }
+
+    @media (max-width: 900px) {
+      body { flex-direction: column; }
+      #sidebar { position: relative; width: 100%; height: auto; border-inline-end: none; border-bottom: 1px solid var(--border); }
+      #main-content { margin-right: 0; padding: 20px; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Navigation Sidebar -->
+  <aside id="sidebar">
+    <div class="brand">
+      <div class="brand-icon">🤖</div>
+      <div>
+        <div class="brand-title">Modeer Bot Guide</div>
+        <div class="brand-subtitle">دليل الأتمتة والروبوت — v122</div>
+      </div>
+    </div>
+
+    <div class="search-box">
+      <span class="search-icon">🔍</span>
+      <input type="text" id="guide-filter" placeholder="بحث سريع في العمليات..." oninput="filterSections(this.value)">
+    </div>
+
+    <div class="nav-section-title">نظرة عامة</div>
+    <a href="#quick-start" class="nav-link">⚡ البدء السريع (Quick Start)</a>
+    <a href="#runtime-rules" class="nav-link">🛡 قواعد التشغيل الآمنة للروبوت</a>
+    <a href="#nav-matrix" class="nav-link">🧭 خريطة الشاشات والاختصارات</a>
+
+    <div class="nav-section-title">خطوات العمليات المالية (Workflows)</div>
+    <a href="#wf-entry" class="nav-link">📝 1. إدخال قيد محاسبي <code>entry</code></a>
+    <a href="#wf-rcpt" class="nav-link">💵 2. سند قبض وسند صرف <code>rcpt</code></a>
+    <a href="#wf-chqreq" class="nav-link">📄 3. طلب صرف الشيكات <code>ChqReq</code></a>
+    <a href="#wf-sales" class="nav-link">🛒 4. عروض الأسعار وفواتير البيع <code>sd</code></a>
+    <a href="#wf-purchases" class="nav-link">📦 5. فواتير وتكاليف المشتريات <code>sd</code></a>
+    <a href="#wf-export" class="nav-link">🚢 6. ملفات التصدير والشحن <code>shp</code></a>
+    <a href="#wf-import" class="nav-link">🛃 7. عمليات الاستيراد والتكلفة <code>imp</code></a>
+    <a href="#wf-stock" class="nav-link">🏭 8. حركات المخزن والتصنيع <code>wh/mf</code></a>
+    <a href="#wf-payroll" class="nav-link">👥 9. مسيرات الرواتب والموظفين <code>pay</code></a>
+    <a href="#wf-reports" class="nav-link">📊 10. القوائم والتقارير والطباعة <code>ias/tb</code></a>
+    <a href="#wf-attach" class="nav-link">📎 11. إرفاق المستندات والصور <code>ADVX</code></a>
+
+    <div class="nav-section-title">فحص النتائج والأخطاء</div>
+    <a href="#invariants" class="nav-link">⚖️ قواعد الصحة المحاسبية (Invariants)</a>
+    <a href="#troubleshooting" class="nav-link">🛠 معالجة الأخطاء والتنبيهات</a>
+  </aside>
+
+  <!-- Main Content Area -->
+  <main id="main-content">
+    <div class="top-actions">
+      <div>
+        <a href="/" class="back-btn">← العودة لتطبيق مدير (Go to Modeer App)</a>
+      </div>
+      <div class="badge-edge">
+        <span>●</span> Cloudflare Edge D1 Active (v122)
+      </div>
+    </div>
+
+    <section id="header-intro">
+      <h1>دليل اختبار وتشغيل النظام للذكاء الاصطناعي والروبوت (AI Bot Operating Manual)</h1>
+      <p>
+        هذا الدليل مخصص لروبوتات الاختبار والأتمتة المتصفحية (Browser Subagents / Playwright / Puppeteer / Selenium) لإدخال المعاملات، توليد التقارير المطبوعة، وفحص سلامة العمليات المحاسبية عبر واجهة المستخدم مباشرة (UI-driven testing & operations) دون الحاجة لأي تعديلات كود.
+      </p>
+    </section>
+
+    <!-- 1. Quick Start -->
+    <section id="quick-start" class="workflow-card">
+      <div class="workflow-header">
+        <div class="workflow-title">⚡ 1. البدء السريع وتسجيل الدخول للروبوت</div>
+      </div>
+      <p>عند بدء جلسة متصفح جديدة، يقوم الروبوت بالخطوات التالية:</p>
+      <ol class="step-list">
+        <li>
+          <strong>فتح الرابط الأساسي:</strong>
+          <code>https://modeer.modeer.workers.dev/</code> (أو مع تحديد الشركة مباشرة عبر الرابط <code>?company=Tijarahub</code>).
+        </li>
+        <li>
+          <strong>تسجيل الدخول (إن ظهرت شاشة الدخول):</strong>
+          <br>
+          اسم المستخدم الافتراضي: <code>admin</code>
+          <br>
+          كلمة السر الافتراضية: <code>123456</code>
+          <br>
+          ثم الضغط على زر <span class="key-badge">دخول (Login)</span>.
+        </li>
+        <li>
+          <strong>اختيار الشركة (Company Switching):</strong>
+          <br>
+          يمكن اختيار الشركة قبل الدخول من القائمة المنسدلة <code>CoPick</code> على شاشة الدخول، أو بعد الدخول من الشريط العلوي الثابت <code>#modeer-company-nav select</code>.
+        </li>
+        <li>
+          <strong>التحقق من جاهزية السحابة (Cloud Readiness Check):</strong>
+          <br>
+          تأكد من أن مؤشر المزامنة في أسفل يسار الشاشة <code>#modeer-cloud-status</code> يظهر بحالة:
+          <span style="color:var(--success);font-weight:700">● محفوظ في Cloudflare D1</span> أو <span style="font-weight:700">🏢 Tijarahub ● D1</span>.
+        </li>
+      </ol>
+
+      <div class="alert alert-info">
+        <div class="alert-title">💡 سرعة التنقل عبر لوحة الأوامر السريعة (Ctrl + K)</div>
+        الروبوت يستطيع فتح أي شاشة مباشرة في خطوة واحدة بالضغط على <span class="key-badge">Ctrl + K</span> (أو النقر على مربع البحث في الأعلى)، وكتابة اسم التبويب (مثل <code>entry</code> أو <code>قيود</code>)، ثم الضغط على <span class="key-badge">Enter</span>.
+      </div>
+    </section>
+
+    <!-- 2. Runtime Rules for Bots -->
+    <section id="runtime-rules" class="workflow-card">
+      <div class="workflow-header">
+        <div class="workflow-title">🛡 2. قواعد التشغيل والمزامنة الآمنة للروبوت</div>
+      </div>
+      <p>يجب على روبوت الأتمتة الالتزام بالقواعد التالية لضمان حفظ البيانات وسلامة المحاسبة:</p>
+      
+      <div class="alert alert-warning">
+        <div class="alert-title">⚠️ قاعدة المزامنة السحابية الأساسية (The Cloud Status Rule)</div>
+        يقوم تطبيق مدير بالمزامنة التلقائية مع قاعدة بيانات Cloudflare D1 كل ثانيتين عند إدخال أي حركة.
+        <br>
+        <strong>على الروبوت انتظار اختفاء حالة <code>⏳ جاري الحفظ في D1...</code> وظهور النقطة الخضراء <code>●</code> قبل إغلاق الصفحة أو إعادة تحميلها.</strong>
+      </div>
+
+      <table>
+        <thead>
+          <tr>
+            <th>عنصر الواجهة</th>
+            <th>المحدد البرمجي (Selector)</th>
+            <th>ما يجب على الروبوت فحصه</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>مؤشر المزامنة السحابية</td>
+            <td><code>#modeer-cloud-status</code></td>
+            <td>التأكد من عدم وجود رسالة خطأ <code>⚠️ تعذر الحفظ</code>.</td>
+          </tr>
+          <tr>
+            <td>رسائل التنبيه والنجاح</td>
+            <td><code>div.msg</code> أو رسائل Toast</td>
+            <td>فحص ظهور علامة النجاح <code>✓</code> (مثال: <code>سُجّل سند القبض RC-1 ✓</code>).</td>
+          </tr>
+          <tr>
+            <td>شريط الشركة والتبديل</td>
+            <td><code>#modeer-company-nav select</code></td>
+            <td>قيمة الشركة النشطة الحالية (Current active company).</td>
+          </tr>
+          <tr>
+            <td>معاينة الطباعة والمستندات</td>
+            <td><code>div.pv</code></td>
+            <td>النافذة الشاملة للمستند المطبوع (A4 print layout).</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- 3. Navigation Matrix -->
+    <section id="nav-matrix" class="workflow-card">
+      <div class="workflow-header">
+        <div class="workflow-title">🧭 3. خريطة الشاشات والاختصارات (Navigation Matrix)</div>
+      </div>
+      <p>استخدم هذه المفاتيح في لوحة البحث السريع <code>Ctrl + K</code> أو للتنقل بين الأقسام:</p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>القسم</th>
+            <th>اسم الشاشة</th>
+            <th>رمز التبويب (Tab Key)</th>
+            <th>كلمات البحث (Ctrl+K)</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>المحاسبة العامة</td>
+            <td>إدخال القيود المحاسبية</td>
+            <td><code>entry</code></td>
+            <td>قيد، قيود، entry</td>
+          </tr>
+          <tr>
+            <td>المحاسبة العامة</td>
+            <td>سجل القيود اليومية والمراجعة</td>
+            <td><code>jv</code></td>
+            <td>سجل، يومية، jv</td>
+          </tr>
+          <tr>
+            <td>الخزينة والبنوك</td>
+            <td>سندات القبض والصرف والشيكات</td>
+            <td><code>rcpt</code></td>
+            <td>قبض، صرف، شيك، rcpt</td>
+          </tr>
+          <tr>
+            <td>المبيعات والمشتريات</td>
+            <td>الفواتير وعروض الأسعار</td>
+            <td><code>sd</code></td>
+            <td>فاتورة، مبيعات، مشتريات، sd</td>
+          </tr>
+          <tr>
+            <td>التجارة الخارجية</td>
+            <td>ملف العملية (تصدير / شحن)</td>
+            <td><code>shp</code></td>
+            <td>شحن، تصدير، بوليصة، shp</td>
+          </tr>
+          <tr>
+            <td>التجارة الخارجية</td>
+            <td>عمليات الاستيراد واحتساب التكلفة</td>
+            <td><code>imp</code></td>
+            <td>استيراد، جمارك، نافذة، acid، imp</td>
+          </tr>
+          <tr>
+            <td>المخزون</td>
+            <td>حركات المخزن والأرصدة</td>
+            <td><code>wh</code></td>
+            <td>مخزن، بضاعة، صنف، وارد، صادر، wh</td>
+          </tr>
+          <tr>
+            <td>الموارد البشرية</td>
+            <td>مسير الرواتب الشهرية</td>
+            <td><code>pay</code></td>
+            <td>رواتب، مسير، راتب، pay</td>
+          </tr>
+          <tr>
+            <td>التقارير المالية</td>
+            <td>ميزان المراجعة</td>
+            <td><code>tb</code></td>
+            <td>ميزان، مراجعة، tb</td>
+          </tr>
+          <tr>
+            <td>التقارير المالية</td>
+            <td>القوائم المالية الدولية IAS / IFRS</td>
+            <td><code>ias</code></td>
+            <td>معايير، دخل شامل، مركز مالي، ias</td>
+          </tr>
+          <tr>
+            <td>التقارير المالية</td>
+            <td>مقارنة السنوات والمؤشرات المالية</td>
+            <td><code>ycmp</code></td>
+            <td>مقارنة، نسب مالية، تداول، ycmp</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- Workflows Section -->
+    <h2>خطوات تنفيذ المعاملات المحاسبية (Workflows)</h2>
+
+    <!-- WF 1: Journal Entry -->
+    <section id="wf-entry" class="workflow-card">
+      <div class="workflow-header">
+        <div class="workflow-title">📝 خطوة بخطوة: تسجيل قيد يومية متوازن (Journal Entry)</div>
+      </div>
+      <p><strong>الهدف:</strong> تسجيل قيد يومية يدوي مركب أو بسيط والتأكد من توازنه وترحيله للدفاتر.</p>
+      
+      <ol class="step-list">
+        <li>اضغط <code>Ctrl + K</code> واكتب <code>entry</code> واضغط Enter لفتح شاشة <strong>إدخال القيود</strong>.</li>
+        <li>أدخل تاريخ القيد في حقل <code>التاريخ</code> (بصيغة <code>YYYY-MM-DD</code>).</li>
+        <li>اختر العملة (افتراضياً <code>USD</code> أو العملة الأساسية للشركة).</li>
+        <li>
+          <strong>إدخال سطر المدين:</strong>
+          <br>
+          في عمود <code>الحساب</code> اختر الحساب (مثال: <code>Rent</code> أو <code>General Expenses</code>).
+          <br>
+          في عمود <code>مدين</code> أدخل المبلغ (مثال: <code>1500</code>).
+          <br>
+          في عمود <code>البيان</code> اكتب شرح السطر (مثال: <code>إيجار شهر نوفمبر 2026</code>).
+        </li>
+        <li>
+          <strong>إدخال سطر الدائن:</strong>
+          <br>
+          اضغط زر <code>+ سطر</code> لإضافة سطر جديد.
+          <br>
+          اختر الحساب المقابل (مثال: <code>Bank</code> أو <code>Cash</code> أو اسم الصندوق الفرعي).
+          <br>
+          في عمود <code>دائن</code> أدخل نفس المبلغ (مثال: <code>1500</code>).
+        </li>
+        <li>
+          <strong>التحقق الآلي من التوازن:</strong>
+          <br>
+          يفحص الروبوت مؤشر الفرق أسفل الجدول: يجب أن يكون الفرق <code>0.00</code> ليصبح زر الترحيل مفعلاً باللون الأخضر.
+        </li>
+        <li>
+          <strong>الترحيل:</strong>
+          <br>
+          اضغط زر <code>ترحيل القيد</code>.
+        </li>
+        <li>
+          <strong>التحقق من النتيجة:</strong>
+          <br>
+          تحقق من ظهور رسالة النجاح: <code>رُحّل القيد رقم JV-... ✓</code>.
+        </li>
+      </ol>
+    </section>
+
+    <!-- WF 2: Receipts & Payments -->
+    <section id="wf-rcpt" class="workflow-card">
+      <div class="workflow-header">
+        <div class="workflow-title">💵 خطوة بخطوة: سند قبض وسند صرف نقدية أو شيك (Receipts & Payments)</div>
+      </div>
+      <p><strong>الهدف:</strong> تسجيل سداد لمورد أو تحصيل من عميل نقداً أو بشيك بنكي واختبار دورة التحصيل.</p>
+
+      <ol class="step-list">
+        <li>افتح شاشة <code>rcpt</code> (سندات القبض والصرف).</li>
+        <li>
+          <strong>لسند قبض جديد:</strong> اضغط زر <code>+ سند قبض</code> باللون الأخضر.
+          <br>
+          <strong>لسند صرف جديد:</strong> اضغط زر <code>+ سند صرف</code> باللون البرتقالي.
+        </li>
+        <li>حدد الطرف (عميل، مورد، أو حساب مصروف/إيراد من الدليل).</li>
+        <li>أدخل المبلغ في حقل <code>المبلغ</code>.</li>
+        <li>
+          <strong>طريقة الدفع (نقدي أم شيك):</strong>
+          <br>
+          - إذا كان <strong>نقدي:</strong> اختر الصندوق/الخزينة.
+          <br>
+          - إذا كان <strong>شيك:</strong> أدخل رقم الشيك، اسم البنك، تاريخ الاستحقاق، واسم الساحب/المستفيد. (يقترح النظام الرقم التالي من دفتر الشيكات تلقائياً).
+        </li>
+        <li>أدخل البيان في حقل <code>وذلك عن</code>.</li>
+        <li>اضغط <code>حفظ</code> أو <code>حفظ وطباعة</code>.</li>
+        <li>
+          <strong>تحصيل أو صرف الشيك لاحقاً:</strong>
+          <br>
+          في جدول السندات، يجد الروبوت زر <code>تحصيل</code> (للقبض) أو <code>صرف</code> (للصرف) باللون الأخضر. النقر عليه يؤكد سحب/إيداع الشيك في البنك وينشئ قيده تلقائياً.
+        </li>
+      </ol>
+    </section>
+
+    <!-- WF 3: Cheque Request Form -->
+    <section id="wf-chqreq" class="workflow-card">
+      <div class="workflow-header">
+        <div class="workflow-title">📄 خطوة بخطوة: إصدار تفويض وطلب صرف شيك بنكي (Cheque Requisition)</div>
+      </div>
+      <p><strong>الهدف:</strong> استخراج خطاب تفويض وصرف شيك رسمي مطبوع موجه للبنك مع تفقيط المبلغ بالحروف العربية.</p>
+
+      <ol class="step-list">
+        <li>في شاشة سندات القبض والصرف <code>rcpt</code>، ابحث عن أي سند صرف شيك صادر.</li>
+        <li>في عمود الإجراءات، انقر على زر <span class="key-badge" style="color:#4338ca">📄 طلب صرف</span>.</li>
+        <li>
+          تفتح نافذة المعاينة والخطاب الرسمي وتتضمن:
+          <br>
+          - تفقيط المبلغ التلقائي باللغة العربية (مثال: <em>فقط خمسة آلاف دولار أمريكي لا غير</em>).
+          <br>
+          - اسم المفوّض ورقمه القومي (National ID) ورقم الحساب البنكي.
+          <br>
+          - خيار تفعيل/إلغاء الترويسة المطبوعة (Letterhead).
+        </li>
+        <li>انقر زر <code>طباعة</code> لاختبار أمر الطباعة أو <code>إغلاق</code> للعودة.</li>
+      </ol>
+    </section>
+
+    <!-- WF 4 & 5: Invoices & Quotes -->
+    <section id="wf-sales" class="workflow-card">
+      <div class="workflow-header">
+        <div class="workflow-title">🛒 خطوة بخطوة: عروض الأسعار وفواتير المبيعات (Sales & Quotes)</div>
+      </div>
+      <p><strong>الهدف:</strong> إنشاء فاتورة مبيعات، احتساب الضريبة، وترحيلها لحساب العميل والمخزن.</p>
+
+      <ol class="step-list">
+        <li>افتح شاشة <code>sd</code> (عروض الأسعار والفواتير).</li>
+        <li>اضغط زر <code>+ فاتورة مبيعات</code> (أو <code>+ عرض سعر</code>).</li>
+        <li>اختر اسم العميل من القائمة، وأدخل تاريخ الفاتورة.</li>
+        <li>أضف سطور البضاعة: الصنف، الكمية، وسعر الوحدة، والخصم إن وجد.</li>
+        <li>اختر نسبة الضريبة (مثال: <code>14%</code> لضريبة القيمة المضافة أو <code>0%</code> للتصدير المعفى).</li>
+        <li>اضغط <code>حفظ كمسودة</code> (Draft) للتأكد من حفظها دون تأثير على الدفاتر.</li>
+        <li>اضغط <code>ترحيل</code> (Post): يقوم النظام بترحيل قيد الإيراد والضريبة وقيد تكلفة البضاعة المباعة وخصم المخزن تلقائياً.</li>
+        <li>انقر زر <code>طباعة / PDF</code> لاختبار توليد الفاتورة المطبوعة الرسمية.</li>
+      </ol>
+    </section>
+
+    <!-- WF 6: Export & Freight -->
+    <section id="wf-export" class="workflow-card">
+      <div class="workflow-header">
+        <div class="workflow-title">🚢 خطوة بخطوة: متابعة عمليات التصدير والشحن (Export Dossier)</div>
+      </div>
+      <p><strong>الهدف:</strong> تجميع فواتير وتكاليف شحنة تصدير كاملة في ملف واحد واحتساب الربحية الصافية للشحنة.</p>
+
+      <ol class="step-list">
+        <li>افتح شاشة <code>shp</code> (ملف العملية — تصدير / شحن).</li>
+        <li>اختر أو أنشئ رقم شحنة جديد (مثال: <code>EXP-2026-001</code>).</li>
+        <li>اربط فواتير المبيعات غير المرتبطة بهذه الشحنة عبر النقر على زر الفاتورة.</li>
+        <li>سجل تكاليف الشحنة (شحن بحري، تخليص، نولون، رسوم موانئ) عبر زر <code>+ تكلفة</code>.</li>
+        <li>
+          <strong>التحقق من مؤشرات الربحية:</strong>
+          <br>
+          يفحص الروبوت بطاقات الشحنة:
+          <code>الإيراد $</code> | <code>التكاليف $</code> | <code>الربح الصافي $</code> | <code>الهامش %</code>.
+        </li>
+        <li>اضغط <code>🖨 طباعة ملف الشحنة</code> لمعاينة تقرير ربحية ومستندات الشحنة الكاملة.</li>
+      </ol>
+    </section>
+
+    <!-- WF 7: Import Operations -->
+    <section id="wf-import" class="workflow-card">
+      <div class="workflow-header">
+        <div class="workflow-title">🛃 خطوة بخطوة: عمليات الاستيراد واحتساب التكلفة الجمركية (Import Costing)</div>
+      </div>
+      <p><strong>الهدف:</strong> تسجيل شحنة استيراد، إدخال رقم القيد الجمركي المبدئي (ACID)، وتوزيع مصاريف التخليص والجمارك والضريبة على تكلفة كل صنف.</p>
+
+      <ol class="step-list">
+        <li>افتح شاشة <code>imp</code> (عمليات الاستيراد).</li>
+        <li>اضغط زر <code>+ عملية استيراد جديدة</code>.</li>
+        <li>
+          <strong>إدخال البيانات اللوجستية:</strong>
+          <br>
+          - المورد الأجنبي وبلد المنشأ.
+          <br>
+          - ميناء الشحن وميناء الوصول (مثال: <code>ميناء الإسكندرية</code> أو <code>ميناء العين السخنة</code>).
+          <br>
+          - <strong>رقم ACID:</strong> إدخال رقم منظومة نافذة المكون من 19 رقماً.
+          <br>
+          - شرط التسليم (Incoterm: FOB, CIF, CFR...) ورقم البوليصة (B/L).
+        </li>
+        <li>أدخل الأصناف المستوردة (الوصف، كود البند الجمركي HS Code، الكمية، وسعر الوحدة بالعملة الأجنبية).</li>
+        <li>
+          <strong>إدخال المصاريف المباشرة:</strong>
+          <br>
+          أدخل تكلفة الشحن البحري، التخليص الجمركي، رسوم الموانئ، والأرضيات.
+        </li>
+        <li>
+          <strong>توزيع التكلفة (Cost Absorption):</strong>
+          <br>
+          اختر أساس التوزيع: <code>حسب القيمة (By Value)</code> أو <code>حسب الكمية/الوزن (By Quantity)</code>.
+        </li>
+        <li>يفحص الروبوت احتساب التكلفة الاستيرادية الصافية للوحدة بالعملة المحلية (Landed Cost per Unit).</li>
+        <li>اضغط <code>🖨 طباعة بيان التكلفة</code> لاستخراج كشف احتساب تكاليف الاستيراد.</li>
+      </ol>
+    </section>
+
+    <!-- WF 8: Stock & Manufacturing -->
+    <section id="wf-stock" class="workflow-card">
+      <div class="workflow-header">
+        <div class="workflow-title">🏭 خطوة بخطوة: إدارة المخزن والتصنيع (Inventory & Production)</div>
+      </div>
+      <ol class="step-list">
+        <li>افتح شاشة <code>wh</code> (المخزن).</li>
+        <li>أدخل صنفاً جديداً عبر <code>+ صنف جديد</code> مع كود الصنف وسعر الشراء وسعر البيع وحد الطلب.</li>
+        <li>سجل حركة وارد بضاعة عبر زر <code>+ حركة مخزن</code> مع تحديد النوع: <code>وارد (In)</code>، الكمية، والمستودع.</li>
+        <li>تأكد من تحديث رصيد الصنف ومتوسط التكلفة المرجح (Weighted Average Cost).</li>
+        <li>في شاشة التصنيع <code>mf</code>: أنشئ أمر إنتاج عبر تحديد المنتج النهائي ومكونات الفاتورة الصناعية (BOM) واضغط <code>تنفيذ وترحيل الإنتاج</code>.</li>
+      </ol>
+    </section>
+
+    <!-- WF 9: Payroll & HR -->
+    <section id="wf-payroll" class="workflow-card">
+      <div class="workflow-header">
+        <div class="workflow-title">👥 خطوة بخطوة: مسير الرواتب الشهرية وطباعة القسائم (Payroll)</div>
+      </div>
+      <ol class="step-list">
+        <li>افتح شاشة <code>emp</code> (الموظفون) للتأكد من وجود الموظفين والراتب الأساسي لكل موظف.</li>
+        <li>افتح شاشة <code>pay</code> (مسير الرواتب).</li>
+        <li>اختر شهر المسير (مثال: <code>2026-11</code>).</li>
+        <li>أدخل المتغيرات إن وجدت: بدلات، مكافآت، خصومات أو سلف.</li>
+        <li>اضغط <code>حساب المسير</code> ثم <code>ترحيل قيد الرواتب</code> لترحيل استحقاق الرواتب والتأمينات لدفتر الأستاذ.</li>
+        <li>اضغط <code>🖨 طباعة قسائم الرواتب (Payslips)</code> لكل موظف لمعاينة نموذج القسيمة الفردي المعتمد.</li>
+      </ol>
+    </section>
+
+    <!-- WF 10: Financial Statements & Reports -->
+    <section id="wf-reports" class="workflow-card">
+      <div class="workflow-header">
+        <div class="workflow-title">📊 خطوة بخطوة: استخراج القوائم المالية والتقارير المقارنة (Financial Reports)</div>
+      </div>
+      <p>يمكن للروبوت اختبار وتوليد جميع القوائم التالية:</p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>التقرير</th>
+            <th>التبويب</th>
+            <th>ماذا يختبر الروبوت؟</th>
+            <th>طرق التصدير المتاحة</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>ميزان المراجعة</td>
+            <td><code>tb</code></td>
+            <td>تساوي إجمالي الأرصدة المدينة والدائنة وصحة رصيد أول وآخر المدة.</td>
+            <td>Excel منظم + PDF طباعة</td>
+          </tr>
+          <tr>
+            <td>دفتر الأستاذ العام</td>
+            <td><code>gl</code></td>
+            <td>حركات كل حساب تفصيلياً مع الرصيد التراكمي بعد كل حركة.</td>
+            <td>Excel + PDF طباعة</td>
+          </tr>
+          <tr>
+            <td>القوائم المالية الدولية</td>
+            <td><code>ias</code></td>
+            <td>قائمة المركز المالي IAS 1، قائمة الدخل الشامل IFRS 15، والتدفقات النقدية غير المباشرة IAS 7.</td>
+            <td>عرض مقارن + طباعة رسمية</td>
+          </tr>
+          <tr>
+            <td>مقارنة السنوات</td>
+            <td><code>ycmp</code></td>
+            <td>عرض السنوات المالية جنباً إلى جنب مع نسبة التغير والمؤشرات المالية (السيولة، المديونية، الربحية).</td>
+            <td>طباعة تقرير التحليل المالي</td>
+          </tr>
+          <tr>
+            <td>حركة النقدية والصناديق</td>
+            <td><code>cash</code></td>
+            <td>أرصدة كل صندوق وبنك وتحليل الداخل والخارج.</td>
+            <td>طباعة يومية الصندوق</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- WF 11: Attachments & Cloud Storage -->
+    <section id="wf-attach" class="workflow-card">
+      <div class="workflow-header">
+        <div class="workflow-title">📎 خطوة بخطوة: رفع وفحص المرفقات السحابية (Attachments & D1 Storage)</div>
+      </div>
+      <p>
+        تخزن المرفقات (صور الشيكات، بوالص الشحن، صور الفواتير، المستندات الرسمية) مشفرة ومقسمة على هيئة كتل Base64 في قاعدة بيانات Cloudflare D1 مع كاش محلي سريع.
+      </p>
+
+      <ol class="step-list">
+        <li>في أي سند أو فاتورة أو شحنة، انقر على زر الدبوس <code>📎 إضافة</code> أو <code>📎 مرفقات</code>.</li>
+        <li>تفتح نافذة المرفقات <code>ADVX.AttachModal</code>.</li>
+        <li>
+          <strong>رفع ملف عبر الروبوت:</strong>
+          <br>
+          يقوم الروبوت بتمرير ملف تجريبي (صورة PNG/JPEG أو PDF) إلى مدخل الملفات المخفي:
+          <br>
+          <code>input[type="file"][accept*="image"]</code>.
+        </li>
+        <li>
+          يقوم النظام تلقائياً بضغط الصورة عبر <code>canvas shrink()</code> وحفظها في Cloudflare D1.
+        </li>
+        <li>
+          <strong>التحقق:</strong>
+          <br>
+          تحقق من زيادة عداد المرفقات (مثال: <code>📎 (1)</code>).
+        </li>
+        <li>
+          انقر على المصغّر (Thumbnail) للتأكد من فتح الصورة المكبرة بسلاسة.
+        </li>
+      </ol>
+    </section>
+
+    <!-- Invariants Section -->
+    <section id="invariants" class="workflow-card">
+      <div class="workflow-header">
+        <div class="workflow-title">⚖️ 4. قواعد الصحة المحاسبية الإلزامية (Accounting Invariants Checklist)</div>
+      </div>
+      <p>عند تنفيذ الروبوت لاختبارات شاملة، يجب التأكد من تحقق هذه القواعد الصارمة:</p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>القاعدة (Invariant)</th>
+            <th>الشرط المحاسبي</th>
+            <th>النتيجة المتوقعة عند المخالفة</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>توازن القيد (Balanced Voucher)</td>
+            <td><code>sum(Debit) === sum(Credit)</code></td>
+            <td>النظام يرفض الترحيل ويعرض رسالة <code>القيد غير متوازن</code>.</td>
+          </tr>
+          <tr>
+            <td>عدم تجاوز الرصيد النقدي المتاح</td>
+            <td>رصيد الخزينة لا يمكن أن يصبح سالباً تلقائياً</td>
+            <td>
+              يطلب النظام إما تحديد شريك/موظف لتمويل العجز في جاري الشركاء أو يرفض الصرف.
+            </td>
+          </tr>
+          <tr>
+            <td>عدم تكرار أرقام الشيكات</td>
+            <td>رقم الشيك فريد لكل حساب بنكي</td>
+            <td>يرفض النظام تكرار رقم الشيك ويعرض تنبيهاً بالرقم المسجل سابقاً.</td>
+          </tr>
+          <tr>
+            <td>عدم تعديل القيود المرحّلة (Append-Only)</td>
+            <td>القيد المرحل لا يُعدل ولا يُحذف مباشرة</td>
+            <td>يُجرى التعديل عبر إلغاء السند وعمل قيد عكسي مطابق وموازي.</td>
+          </tr>
+          <tr>
+            <td>العملة ومطابقة الحساب</td>
+            <td>عملة الحساب الفرعي تطابق حركة الصرف/القبض</td>
+            <td>النظام يرفض ربط شيك بعملة تختلف عن عملة الحساب البنكي المحدد.</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- Troubleshooting Section -->
+    <section id="troubleshooting" class="workflow-card">
+      <div class="workflow-header">
+        <div class="workflow-title">🛠 5. معالجة التنبيهات والأخطاء الشائعة للروبوت (Troubleshooting)</div>
+      </div>
+      
+      <table>
+        <thead>
+          <tr>
+            <th>رسالة التنبيه في التطبيق</th>
+            <th>السبب المحتمل</th>
+            <th>تصرف الروبوت الصحيح</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>اكتب مبلغاً أكبر من صفر</code></td>
+            <td>تم ترك حقل المبلغ فارغاً أو بقيمة صفرية.</td>
+            <td>كتابة رقم موجب في خانة المبلغ (مثال: <code>500</code>).</td>
+          </tr>
+          <tr>
+            <td><code>اختر الحساب النقدي/البنكي</code></td>
+            <td>لم يتم تحديد الصندوق أو الحساب البنكي للصرف منه.</td>
+            <td>اختيار اسم الحساب من قائمة <code>select</code> المتاحة.</td>
+          </tr>
+          <tr>
+            <td><code>الرصيد المتاح هو X فقط — اكتب اسم من موّل العجز</code></td>
+            <td>المبلغ المطلوب صرفه نقداً أكبر من الرصيد المتوفر في الخزينة.</td>
+            <td>إدخال اسم الشريك أو الموظف في خانة تمويل العجز أو الصرف بشيك.</td>
+          </tr>
+          <tr>
+            <td><code>رقم الشيك خارج دفاتر الشيكات النشطة</code></td>
+            <td>رقم الشيك المكتوب يقع خارج مدى دفاتر الشيكات المسجلة.</td>
+            <td>اختيار دفتر الشيكات المقترح من القائمة أو تسجيل دفتر جديد من <code>📒 دفاتر الشيكات</code>.</td>
+          </tr>
+          <tr>
+            <td>نافذة الطباعة عالقة (Print Preview Open)</td>
+            <td>تم النقر على طباعة وظهرت نافذة المعاينة <code>div.pv</code>.</td>
+            <td>النقر على زر <code>إغلاق</code> أو الضغط على مفتاح <code>Escape</code> للعودة للشاشة السابقة.</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <footer style="margin-top: 40px; padding-top: 20px; border-top: 1px solid var(--border); text-align: center; font-size: 13px; color: var(--text-muted);">
+      Modeer Dashboard Automated Testing Specification • Version 122 • Published for Cloudflare Edge & AI Subagents
+    </footer>
+  </main>
+
+  <script>
+    function filterSections(query) {
+      const q = query.trim().toLowerCase();
+      const sections = document.querySelectorAll('.workflow-card, section');
+      const links = document.querySelectorAll('#sidebar .nav-link');
+
+      sections.forEach(sec => {
+        if (!q) {
+          sec.style.display = '';
+          return;
+        }
+        const text = sec.textContent.toLowerCase();
+        if (text.includes(q)) {
+          sec.style.display = '';
+        } else {
+          sec.style.display = 'none';
+        }
+      });
+
+      links.forEach(l => {
+        if (!q) {
+          l.style.display = '';
+          return;
+        }
+        const text = l.textContent.toLowerCase();
+        if (text.includes(q)) {
+          l.style.display = '';
+        } else {
+          l.style.display = 'none';
+        }
+      });
+    }
+
+    // Highlight active link on scroll
+    window.addEventListener('scroll', () => {
+      const scrollPos = window.scrollY + 100;
+      const links = document.querySelectorAll('#sidebar .nav-link');
+      links.forEach(link => {
+        const targetId = link.getAttribute('href');
+        if (targetId && targetId.startsWith('#')) {
+          const el = document.querySelector(targetId);
+          if (el) {
+            const top = el.offsetTop;
+            const height = el.offsetHeight;
+            if (scrollPos >= top && scrollPos < top + height) {
+              link.classList.add('active');
+            } else {
+              link.classList.remove('active');
+            }
+          }
+        }
+      });
+    });
+  </script>
+</body>
+</html>
