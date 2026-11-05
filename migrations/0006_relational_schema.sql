@@ -115,3 +115,4 @@ CREATE TABLE IF NOT EXISTS currencies (
 );
 
 CREATE INDEX IF NOT EXISTS idx_currencies_company ON currencies(company_id);
+

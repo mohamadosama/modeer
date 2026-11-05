@@ -362,6 +362,20 @@
   let lastSavedMap = {};
   let isSaving = false;
   let autosyncTimer = null;
+  let multiUserSyncTimer = null;
+
+  async function pollMultiUserLedger() {
+    const co = getActiveCompany();
+    if (window.ModeerDataService && window.ModeerDataService.syncLedgerDelta) {
+      try {
+        const res = await window.ModeerDataService.syncLedgerDelta(co);
+        if (res && res.updated && res.count > 0) {
+          updateStatus('connected', `مزامنة متعددة المستخدمين: تم استلام ${res.count} قيد جديد`);
+          setTimeout(() => updateStatus('connected'), 3500);
+        }
+      } catch (e) {}
+    }
+  }
 
   async function tick() {
     if (isSaving) return;
@@ -398,6 +412,10 @@
         if (autosyncTimer) {
           clearInterval(autosyncTimer);
           autosyncTimer = null;
+        }
+        if (multiUserSyncTimer) {
+          clearInterval(multiUserSyncTimer);
+          multiUserSyncTimer = null;
         }
       } else {
         updateStatus('error');
@@ -629,6 +647,10 @@
           if (!autosyncTimer) {
             autosyncTimer = setInterval(tick, 2000);
           }
+          if (!multiUserSyncTimer) {
+            multiUserSyncTimer = setInterval(pollMultiUserLedger, 12000);
+            setTimeout(pollMultiUserLedger, 1500);
+          }
 
           window.dispatchEvent(
             new CustomEvent('modeer:auth', {
@@ -659,6 +681,8 @@
     },
 
     async logout() {
+      if (autosyncTimer) clearInterval(autosyncTimer);
+      if (multiUserSyncTimer) clearInterval(multiUserSyncTimer);
       try {
         await fetch('/api/auth/logout', { method: 'POST' });
       } catch (e) {}
@@ -727,6 +751,10 @@
         updateStatus('connected');
         if (!autosyncTimer) {
           autosyncTimer = setInterval(tick, 5000);
+        }
+        if (!multiUserSyncTimer) {
+          multiUserSyncTimer = setInterval(pollMultiUserLedger, 12000);
+          setTimeout(pollMultiUserLedger, 2000);
         }
 
         window.dispatchEvent(
