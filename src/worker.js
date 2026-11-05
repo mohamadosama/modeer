@@ -114,6 +114,19 @@ async function authenticateRequest(request, env) {
   }
 }
 
+async function resolveCompanyId(env, input) {
+  if (!input) return 'Tijarahub';
+  const c = String(input).trim();
+  try {
+    const found = await env.DB.prepare(
+      'SELECT id FROM companies WHERE id = ? OR name = ? LIMIT 1'
+    ).bind(c, c).first();
+    return found ? found.id : c;
+  } catch (e) {
+    return c;
+  }
+}
+
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
@@ -139,7 +152,7 @@ export default {
           const body = await request.json().catch(() => ({}));
           const username = String(body.username || '').trim();
           const password = String(body.password || '');
-          const company = String(body.company || '').trim() || 'Tijarahub';
+          const company = await resolveCompanyId(env, String(body.company || '').trim() || 'Tijarahub');
 
           if (!username || !password) {
             return jsonResponse({ error: 'Username and password are required' }, 400, cors);
@@ -252,8 +265,15 @@ export default {
             return jsonResponse({ error: 'Company id or name is required' }, 400, cors);
           }
 
+          const existing = await env.DB.prepare(
+            'SELECT id, name, base_currency FROM companies WHERE id = ? OR name = ? LIMIT 1'
+          ).bind(id, name).first();
+          if (existing) {
+            return jsonResponse({ success: true, company: existing }, 200, cors);
+          }
+
           await env.DB.prepare(
-            'INSERT OR REPLACE INTO companies (id, name, base_currency) VALUES (?, ?, ?)'
+            'INSERT INTO companies (id, name, base_currency) VALUES (?, ?, ?)'
           ).bind(id, name, baseCurrency).run();
 
           return jsonResponse({ success: true, company: { id, name, base_currency: baseCurrency } }, 201, cors);
@@ -268,7 +288,7 @@ export default {
             return jsonResponse({ error: 'Authentication required. Please log in.' }, 401, cors);
           }
 
-          const company = url.searchParams.get('company') || session.company || 'Tijarahub';
+          const company = await resolveCompanyId(env, url.searchParams.get('company') || (session && session.company) || 'Tijarahub');
           const { results } = await env.DB.prepare(
             'SELECT key, value FROM company_storage WHERE company = ?'
           ).bind(company).all();
@@ -290,7 +310,7 @@ export default {
             return jsonResponse({ error: 'Authentication required. Please log in.' }, 401, cors);
           }
 
-          const company = url.searchParams.get('company') || session.company || 'Tijarahub';
+          const company = await resolveCompanyId(env, url.searchParams.get('company') || (session && session.company) || 'Tijarahub');
           const body = await request.json().catch(() => ({}));
           const payload = body.data || body;
 
@@ -413,7 +433,7 @@ export default {
         if (url.pathname === '/api/v2/accounts' && request.method === 'GET') {
           const session = await authenticateRequest(request, env);
           if (!session) return problemDetails('Unauthorized', 401, 'Authentication required to access Chart of Accounts.', url.pathname, [], cors);
-          const company = url.searchParams.get('company') || session.company || 'Tijarahub';
+          const company = await resolveCompanyId(env, url.searchParams.get('company') || (session && session.company) || 'Tijarahub');
           const limitParam = parseInt(url.searchParams.get('limit') || '50', 10);
           const limit = isNaN(limitParam) ? 50 : Math.min(Math.max(limitParam, 1), 200);
           const cursor = url.searchParams.get('cursor');
@@ -451,7 +471,7 @@ export default {
         if (url.pathname === '/api/v2/accounts' && request.method === 'POST') {
           const session = await authenticateRequest(request, env);
           if (!session) return problemDetails('Unauthorized', 401, 'Authentication required.', url.pathname, [], cors);
-          const company = url.searchParams.get('company') || session.company || 'Tijarahub';
+          const company = await resolveCompanyId(env, url.searchParams.get('company') || (session && session.company) || 'Tijarahub');
           const body = await request.json().catch(() => ({}));
           const code = String(body.code || '').trim();
           const name = String(body.name || '').trim();
@@ -481,7 +501,7 @@ export default {
         if (url.pathname.startsWith('/api/v2/accounts/') && request.method === 'DELETE') {
           const session = await authenticateRequest(request, env);
           if (!session) return problemDetails('Unauthorized', 401, 'Authentication required.', url.pathname, [], cors);
-          const company = url.searchParams.get('company') || session.company || 'Tijarahub';
+          const company = await resolveCompanyId(env, url.searchParams.get('company') || (session && session.company) || 'Tijarahub');
           const code = decodeURIComponent(url.pathname.replace('/api/v2/accounts/', '')).trim();
 
           // Referential Integrity Guardrail: Prevent deleting if referenced by any voucher lines
@@ -508,7 +528,7 @@ export default {
         if (url.pathname === '/api/v2/vouchers' && request.method === 'GET') {
           const session = await authenticateRequest(request, env);
           if (!session) return problemDetails('Unauthorized', 401, 'Authentication required.', url.pathname, [], cors);
-          const company = url.searchParams.get('company') || session.company || 'Tijarahub';
+          const company = await resolveCompanyId(env, url.searchParams.get('company') || (session && session.company) || 'Tijarahub');
           const vNo = url.searchParams.get('v');
           const status = url.searchParams.get('status'); // 'draft', 'posted', 'cancelled'
 
@@ -585,7 +605,7 @@ export default {
         if (url.pathname.match(/^\/api\/v2\/vouchers\/([^/]+)$/) && request.method === 'GET') {
           const session = await authenticateRequest(request, env);
           if (!session) return problemDetails('Unauthorized', 401, 'Authentication required.', url.pathname, [], cors);
-          const company = url.searchParams.get('company') || session.company || 'Tijarahub';
+          const company = await resolveCompanyId(env, url.searchParams.get('company') || (session && session.company) || 'Tijarahub');
           const id = decodeURIComponent(url.pathname.split('/')[4]);
 
           const voucher = await env.DB.prepare(
@@ -610,7 +630,7 @@ export default {
         if (url.pathname === '/api/v2/vouchers' && request.method === 'POST') {
           const session = await authenticateRequest(request, env);
           if (!session) return problemDetails('Unauthorized', 401, 'Authentication required.', url.pathname, [], cors);
-          const company = url.searchParams.get('company') || session.company || 'Tijarahub';
+          const company = await resolveCompanyId(env, url.searchParams.get('company') || (session && session.company) || 'Tijarahub');
 
           // Idempotency-Key Check
           const idempotencyKey = request.headers.get('Idempotency-Key');
@@ -724,7 +744,7 @@ export default {
         if (url.pathname.match(/^\/api\/v2\/vouchers\/([^/]+)$/) && request.method === 'PUT') {
           const session = await authenticateRequest(request, env);
           if (!session) return problemDetails('Unauthorized', 401, 'Authentication required.', url.pathname, [], cors);
-          const company = url.searchParams.get('company') || session.company || 'Tijarahub';
+          const company = await resolveCompanyId(env, url.searchParams.get('company') || (session && session.company) || 'Tijarahub');
           const id = decodeURIComponent(url.pathname.split('/')[4]);
 
           const current = await env.DB.prepare(
@@ -813,7 +833,7 @@ export default {
         if (url.pathname.match(/^\/api\/v2\/vouchers\/([^/]+)\/post$/) && request.method === 'POST') {
           const session = await authenticateRequest(request, env);
           if (!session) return problemDetails('Unauthorized', 401, 'Authentication required.', url.pathname, [], cors);
-          const company = url.searchParams.get('company') || session.company || 'Tijarahub';
+          const company = await resolveCompanyId(env, url.searchParams.get('company') || (session && session.company) || 'Tijarahub');
           const id = decodeURIComponent(url.pathname.split('/')[4]);
 
           const current = await env.DB.prepare(
@@ -857,7 +877,7 @@ export default {
         if (url.pathname.match(/^\/api\/v2\/vouchers\/([^/]+)\/cancel$/) && request.method === 'POST') {
           const session = await authenticateRequest(request, env);
           if (!session) return problemDetails('Unauthorized', 401, 'Authentication required.', url.pathname, [], cors);
-          const company = url.searchParams.get('company') || session.company || 'Tijarahub';
+          const company = await resolveCompanyId(env, url.searchParams.get('company') || (session && session.company) || 'Tijarahub');
           const id = decodeURIComponent(url.pathname.split('/')[4]);
           const body = await request.json().catch(() => ({}));
           const reason = String(body.reason || '').trim();
@@ -891,7 +911,7 @@ export default {
         if (url.pathname.match(/^\/api\/v2\/vouchers\/([^/]+)\/amend$/) && request.method === 'POST') {
           const session = await authenticateRequest(request, env);
           if (!session) return problemDetails('Unauthorized', 401, 'Authentication required.', url.pathname, [], cors);
-          const company = url.searchParams.get('company') || session.company || 'Tijarahub';
+          const company = await resolveCompanyId(env, url.searchParams.get('company') || (session && session.company) || 'Tijarahub');
           const id = decodeURIComponent(url.pathname.split('/')[4]);
 
           const current = await env.DB.prepare(
@@ -954,7 +974,7 @@ export default {
         if (url.pathname.match(/^\/api\/v2\/vouchers\/([^/]+)$/) && request.method === 'DELETE') {
           const session = await authenticateRequest(request, env);
           if (!session) return problemDetails('Unauthorized', 401, 'Authentication required.', url.pathname, [], cors);
-          const company = url.searchParams.get('company') || session.company || 'Tijarahub';
+          const company = await resolveCompanyId(env, url.searchParams.get('company') || (session && session.company) || 'Tijarahub');
           const id = decodeURIComponent(url.pathname.split('/')[4]);
 
           const current = await env.DB.prepare(
@@ -986,7 +1006,7 @@ export default {
         if (url.pathname === '/api/v2/reports/trial-balance' && request.method === 'GET') {
           const session = await authenticateRequest(request, env);
           if (!session) return problemDetails('Unauthorized', 401, 'Authentication required.', url.pathname, [], cors);
-          const company = url.searchParams.get('company') || session.company || 'Tijarahub';
+          const company = await resolveCompanyId(env, url.searchParams.get('company') || (session && session.company) || 'Tijarahub');
 
           const { results } = await env.DB.prepare(`
             SELECT 
@@ -1032,7 +1052,7 @@ export default {
         if (url.pathname === '/api/v2/assets' && request.method === 'GET') {
           const session = await authenticateRequest(request, env);
           if (!session) return problemDetails('Unauthorized', 401, 'Authentication required.', url.pathname, [], cors);
-          const company = url.searchParams.get('company') || session.company || 'Tijarahub';
+          const company = await resolveCompanyId(env, url.searchParams.get('company') || (session && session.company) || 'Tijarahub');
           const { results } = await env.DB.prepare(
             'SELECT * FROM fixed_assets WHERE company_id = ? ORDER BY code ASC'
           ).bind(company).all();
@@ -1043,7 +1063,7 @@ export default {
         if (url.pathname === '/api/v2/contacts' && request.method === 'GET') {
           const session = await authenticateRequest(request, env);
           if (!session) return problemDetails('Unauthorized', 401, 'Authentication required.', url.pathname, [], cors);
-          const company = url.searchParams.get('company') || session.company || 'Tijarahub';
+          const company = await resolveCompanyId(env, url.searchParams.get('company') || (session && session.company) || 'Tijarahub');
           const { results } = await env.DB.prepare(
             'SELECT * FROM contacts WHERE company_id = ? ORDER BY name ASC'
           ).bind(company).all();
@@ -1054,7 +1074,7 @@ export default {
         if (url.pathname === '/api/v2/currencies' && request.method === 'GET') {
           const session = await authenticateRequest(request, env);
           if (!session) return problemDetails('Unauthorized', 401, 'Authentication required.', url.pathname, [], cors);
-          const company = url.searchParams.get('company') || session.company || 'Tijarahub';
+          const company = await resolveCompanyId(env, url.searchParams.get('company') || (session && session.company) || 'Tijarahub');
           const { results } = await env.DB.prepare(
             'SELECT code as c, name, rate FROM currencies WHERE company_id = ? ORDER BY code ASC'
           ).bind(company).all();
@@ -1065,7 +1085,7 @@ export default {
         if (url.pathname === '/api/v2/updates' && request.method === 'GET') {
           const session = await authenticateRequest(request, env);
           if (!session) return problemDetails('Unauthorized', 401, 'Authentication required.', url.pathname, [], cors);
-          const company = url.searchParams.get('company') || session.company || 'Tijarahub';
+          const company = await resolveCompanyId(env, url.searchParams.get('company') || (session && session.company) || 'Tijarahub');
           const since = url.searchParams.get('since') || '1970-01-01T00:00:00.000Z';
 
           const check = await env.DB.prepare(
@@ -1090,7 +1110,7 @@ export default {
             return jsonResponse({ error: 'Authentication required' }, 401, cors);
           }
 
-          const company = url.searchParams.get('company') || session.company || 'Tijarahub';
+          const company = await resolveCompanyId(env, url.searchParams.get('company') || (session && session.company) || 'Tijarahub');
           const { results } = await env.DB.prepare(
             'SELECT owner, COUNT(*) as cnt FROM attachments WHERE company = ? GROUP BY owner'
           ).bind(company).all();
@@ -1108,7 +1128,7 @@ export default {
             return jsonResponse({ error: 'Authentication required' }, 401, cors);
           }
 
-          const company = url.searchParams.get('company') || session.company || 'Tijarahub';
+          const company = await resolveCompanyId(env, url.searchParams.get('company') || (session && session.company) || 'Tijarahub');
           const { results } = await env.DB.prepare(
             'SELECT id, owner FROM attachments WHERE company = ?'
           ).bind(company).all();
@@ -1122,7 +1142,7 @@ export default {
             return jsonResponse({ error: 'Admin permission required' }, 403, cors);
           }
 
-          const company = url.searchParams.get('company') || session.company || 'Tijarahub';
+          const company = await resolveCompanyId(env, url.searchParams.get('company') || (session && session.company) || 'Tijarahub');
           await env.DB.prepare(
             'DELETE FROM attachment_chunks WHERE attachment_id IN (SELECT id FROM attachments WHERE company = ?)'
           ).bind(company).run();
@@ -1137,7 +1157,7 @@ export default {
             return jsonResponse({ error: 'Authentication required' }, 401, cors);
           }
 
-          const company = url.searchParams.get('company') || session.company || 'Tijarahub';
+          const company = await resolveCompanyId(env, url.searchParams.get('company') || (session && session.company) || 'Tijarahub');
           const owner = url.searchParams.get('owner');
 
           if (!owner) {
@@ -1207,7 +1227,7 @@ export default {
           }
 
           const body = await request.json().catch(() => ({}));
-          const company = url.searchParams.get('company') || session.company || 'Tijarahub';
+          const company = await resolveCompanyId(env, url.searchParams.get('company') || (session && session.company) || 'Tijarahub');
           const id = String(body.id || ('f_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7)));
           const owner = String(body.owner || '').trim();
           const name = String(body.name || 'file').trim();

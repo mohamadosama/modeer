@@ -20,6 +20,8 @@
 
   function setActiveCompany(company) {
     try {
+      const keysToPurge = ['acc_rows', 'acc_coa', 'acc_fa', 'acc_curs', 'acc_contacts'];
+      keysToPurge.forEach((k) => localStorage.removeItem(k));
       localStorage.setItem('modeer_active_company', company);
       localStorage.setItem('modeer_company', company);
       const url = new URL(window.location.href);
@@ -294,16 +296,43 @@
     // Company dropdown
     const sel = document.createElement('select');
     sel.className = 'nav-select';
-    const known = companies && companies.length ? companies.map((c) => (c.name || c.id)).filter(Boolean) : ['Tijarahub', 'Commerc Of Agency'];
-    if (!known.includes(active)) known.push(active);
 
-    known.forEach((co) => {
+    const unique = [];
+    const seen = new Set();
+    const rawList = (companies && companies.length) ? companies : [
+      { id: 'Commerc Of Agency', name: 'Commercial Agency' },
+      { id: 'Tijarahub', name: 'Tijarahub' }
+    ];
+
+    rawList.forEach((c) => {
+      const cid = typeof c === 'string' ? c : (c.id || c.name);
+      const cname = typeof c === 'string' ? c : (c.name || c.id);
+      if (!seen.has(cid) && !seen.has(cname)) {
+        seen.add(cid);
+        seen.add(cname);
+        unique.push({ id: cid, name: cname });
+      }
+    });
+
+    let foundActive = false;
+    unique.forEach((co) => {
       const opt = document.createElement('option');
-      opt.value = co;
-      opt.textContent = co;
-      if (co === active) opt.selected = true;
+      opt.value = co.id;
+      opt.textContent = co.name;
+      if (co.id === active || co.name === active) {
+        opt.selected = true;
+        foundActive = true;
+      }
       sel.appendChild(opt);
     });
+
+    if (!foundActive && active) {
+      const opt = document.createElement('option');
+      opt.value = active;
+      opt.textContent = active;
+      opt.selected = true;
+      sel.insertBefore(opt, sel.firstChild);
+    }
 
     const addOpt = document.createElement('option');
     addOpt.value = '__new__';
@@ -723,7 +752,19 @@
           const res = await dataRes.json();
           const serverData = res.data || {};
 
-          // Populate with loaded data from D1
+          // CRUCIAL: PURGE previous company data from localStorage first to prevent data bleed!
+          const toRemove = [];
+          for (let i = 0; i < localStorage.length; i++) {
+            const k = localStorage.key(i);
+            if (k && (k.startsWith('acc_') || k.startsWith('disk_') || k.startsWith('co_'))) {
+              if (k !== 'acc_lang' && k !== 'acc_theme' && k !== 'acc_users') {
+                toRemove.push(k);
+              }
+            }
+          }
+          toRemove.forEach((k) => localStorage.removeItem(k));
+
+          // Populate with loaded data from D1 for THIS company only
           Object.keys(serverData).forEach((k) => {
             if (k.startsWith('acc_') || k.startsWith('disk_') || k.startsWith('co_')) {
               localStorage.setItem(k, serverData[k]);
