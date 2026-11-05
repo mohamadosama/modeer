@@ -300,6 +300,131 @@ export default {
           return jsonResponse({ success: true, company, updated: entries.length }, 200, cors);
         }
 
+        // ----------------- Relational Accounting API (v2) -----------------
+
+        // 1. Get Accounts (COA)
+        if (url.pathname === '/api/v2/accounts' && request.method === 'GET') {
+          const session = await authenticateRequest(request, env);
+          if (!session) return jsonResponse({ error: 'Authentication required' }, 401, cors);
+          const company = url.searchParams.get('company') || session.company || 'Tijarahub';
+          const { results } = await env.DB.prepare(
+            'SELECT code, name, name_ar as ar, classification as cls, sub, parent_code, is_active as active FROM accounts WHERE company_id = ? ORDER BY code ASC'
+          ).bind(company).all();
+          return jsonResponse({ company, accounts: results || [] }, 200, cors);
+        }
+
+        // 2. Get Vouchers & Lines
+        if (url.pathname === '/api/v2/vouchers' && request.method === 'GET') {
+          const session = await authenticateRequest(request, env);
+          if (!session) return jsonResponse({ error: 'Authentication required' }, 401, cors);
+          const company = url.searchParams.get('company') || session.company || 'Tijarahub';
+          const voucherNo = url.searchParams.get('v');
+
+          if (voucherNo) {
+            const vHeader = await env.DB.prepare(
+              'SELECT * FROM vouchers WHERE company_id = ? AND voucher_no = ?'
+            ).bind(company, voucherNo).first();
+            if (!vHeader) return jsonResponse({ error: 'Voucher not found' }, 404, cors);
+            const { results: lines } = await env.DB.prepare(
+              'SELECT * FROM voucher_lines WHERE company_id = ? AND voucher_id = ? ORDER BY line_no ASC'
+            ).bind(company, vHeader.id).all();
+            return jsonResponse({ voucher: vHeader, lines: lines || [] }, 200, cors);
+          }
+
+          const { results: vouchers } = await env.DB.prepare(
+            'SELECT * FROM vouchers WHERE company_id = ? ORDER BY voucher_date DESC, voucher_no DESC'
+          ).bind(company).all();
+          const { results: lines } = await env.DB.prepare(
+            'SELECT * FROM voucher_lines WHERE company_id = ? ORDER BY line_no ASC'
+          ).bind(company).all();
+
+          return jsonResponse({ company, count: (vouchers || []).length, vouchers: vouchers || [], lines: lines || [] }, 200, cors);
+        }
+
+        // 3. Post Single Voucher (Atomic row-level insert/update - eliminates Lost Updates & saves quota)
+        if (url.pathname === '/api/v2/vouchers' && request.method === 'POST') {
+          const session = await authenticateRequest(request, env);
+          if (!session) return jsonResponse({ error: 'Authentication required' }, 401, cors);
+          const company = url.searchParams.get('company') || session.company || 'Tijarahub';
+          const body = await request.json().catch(() => ({}));
+          const vNo = String(body.voucher_no || body.v || '').trim();
+          if (!vNo) return jsonResponse({ error: 'Voucher number (v) is required' }, 400, cors);
+
+          const vId = `${company}_${vNo}`;
+          const vDate = body.voucher_date || body.date || new Date().toISOString().slice(0, 10);
+          const vPeriod = body.period || body.p || vDate.slice(0, 7);
+          const vDesc = body.description || body.notes || '';
+          const vUser = session.username || 'admin';
+          const lines = Array.isArray(body.lines) ? body.lines : [];
+
+          const stmts = [
+            env.DB.prepare(
+              'INSERT OR REPLACE INTO vouchers (id, company_id, voucher_no, voucher_date, period, description, created_by, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)'
+            ).bind(vId, company, vNo, vDate, vPeriod, vDesc, vUser),
+            env.DB.prepare('DELETE FROM voucher_lines WHERE voucher_id = ?').bind(vId)
+          ];
+
+          lines.forEach((l, idx) => {
+            const lineId = `${vId}_${idx + 1}`;
+            stmts.push(
+              env.DB.prepare(
+                'INSERT INTO voucher_lines (id, voucher_id, company_id, line_no, account_code, gl_name, sub_ledger, party, branch, currency, exchange_rate, original_debit, original_credit, base_debit, base_credit, notes, statement_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+              ).bind(
+                lineId, vId, company, idx + 1,
+                String(l.account_code || l.code || l.gl || ''),
+                String(l.gl_name || l.gl || ''),
+                String(l.sub_ledger || l.sl || ''),
+                String(l.party || l.sup || ''),
+                String(l.branch || l.br || ''),
+                String(l.currency || l.cur || 'USD'),
+                Number(l.exchange_rate || l.rate || 1.0),
+                Number(l.original_debit || l.od || 0.0),
+                Number(l.original_credit || l.oc || 0.0),
+                Number(l.base_debit || l.dr || 0.0),
+                Number(l.base_credit || l.cr || 0.0),
+                String(l.notes || ''),
+                String(l.statement_type || l.st || 'BS')
+              )
+            );
+          });
+
+          await env.DB.batch(stmts);
+          return jsonResponse({ success: true, voucher_no: vNo, lines_count: lines.length }, 201, cors);
+        }
+
+        // 4. Get Fixed Assets
+        if (url.pathname === '/api/v2/assets' && request.method === 'GET') {
+          const session = await authenticateRequest(request, env);
+          if (!session) return jsonResponse({ error: 'Authentication required' }, 401, cors);
+          const company = url.searchParams.get('company') || session.company || 'Tijarahub';
+          const { results } = await env.DB.prepare(
+            'SELECT * FROM fixed_assets WHERE company_id = ? ORDER BY code ASC'
+          ).bind(company).all();
+          return jsonResponse({ company, assets: results || [] }, 200, cors);
+        }
+
+        // 5. Get Contacts
+        if (url.pathname === '/api/v2/contacts' && request.method === 'GET') {
+          const session = await authenticateRequest(request, env);
+          if (!session) return jsonResponse({ error: 'Authentication required' }, 401, cors);
+          const company = url.searchParams.get('company') || session.company || 'Tijarahub';
+          const { results } = await env.DB.prepare(
+            'SELECT * FROM contacts WHERE company_id = ? ORDER BY name ASC'
+          ).bind(company).all();
+          return jsonResponse({ company, contacts: results || [] }, 200, cors);
+        }
+
+        // 6. Get Currencies
+        if (url.pathname === '/api/v2/currencies' && request.method === 'GET') {
+          const session = await authenticateRequest(request, env);
+          if (!session) return jsonResponse({ error: 'Authentication required' }, 401, cors);
+          const company = url.searchParams.get('company') || session.company || 'Tijarahub';
+          const { results } = await env.DB.prepare(
+            'SELECT code as c, name, rate FROM currencies WHERE company_id = ? ORDER BY code ASC'
+          ).bind(company).all();
+          return jsonResponse({ company, currencies: results || [] }, 200, cors);
+        }
+
         // ----------------- Protected Attachments API -----------------
 
         // 1. Get attachment counts (PROTECTED)

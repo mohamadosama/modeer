@@ -29,12 +29,22 @@
     }
   }
 
+  const IGNORED_SYNC_KEYS = new Set([
+    'acc_users',
+    'acc_tabord',
+    'acc_homesz',
+    'acc_ux_navmode',
+    'acc_ux_ext',
+    'acc_lastfull',
+    'acc_audit'
+  ]);
+
   function snapshot() {
     const o = {};
     for (let i = 0; i < localStorage.length; i++) {
       const k = localStorage.key(i);
-      // Exclude acc_users so routine autosync never accidentally overwrites server credentials
-      if (k && k !== 'acc_users' && (k.startsWith('acc_') || k.startsWith('disk_') || k.startsWith('co_'))) {
+      // Exclude ephemeral UI keys and credentials so routine autosync never wastes quota or overwrites passwords
+      if (k && !IGNORED_SYNC_KEYS.has(k) && (k.startsWith('acc_') || k.startsWith('disk_') || k.startsWith('co_'))) {
         o[k] = localStorage.getItem(k);
       }
     }
@@ -349,30 +359,39 @@
     }
   }
 
-  let lastSaved = '';
+  let lastSavedMap = {};
   let isSaving = false;
   let autosyncTimer = null;
 
   async function tick() {
     if (isSaving) return;
     const cur = snapshot();
-    const s = JSON.stringify(cur);
-    if (s === lastSaved) return;
+    const diff = {};
+    let diffCount = 0;
+
+    for (const [k, v] of Object.entries(cur)) {
+      if (lastSavedMap[k] !== v) {
+        diff[k] = v;
+        diffCount++;
+      }
+    }
+
+    if (diffCount === 0) return;
 
     const co = getActiveCompany();
     isSaving = true;
-    updateStatus('syncing');
+    updateStatus('syncing', `جاري حفظ ${diffCount} عنصر في D1...`);
 
     try {
       const res = await fetch(`/api/data?company=${encodeURIComponent(co)}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ data: cur }),
+        body: JSON.stringify({ data: diff, delta: true }),
       });
 
       if (res.ok) {
-        lastSaved = s;
-        updateStatus('saved');
+        Object.assign(lastSavedMap, diff);
+        updateStatus('saved', 'محفوظ في Cloudflare D1');
         setTimeout(() => updateStatus('connected'), 2000);
       } else if (res.status === 401) {
         updateStatus('error', 'انتهت الجلسة — يرجى تسجيل الدخول');
@@ -675,7 +694,7 @@
             }
           });
 
-          lastSaved = JSON.stringify(snapshot());
+          lastSavedMap = snapshot();
           return true;
         }
       } catch (e) {}
@@ -707,7 +726,7 @@
 
         updateStatus('connected');
         if (!autosyncTimer) {
-          autosyncTimer = setInterval(tick, 2000);
+          autosyncTimer = setInterval(tick, 5000);
         }
 
         window.dispatchEvent(
@@ -743,10 +762,18 @@
 
       window.addEventListener('beforeunload', () => {
         const cur = snapshot();
-        if (JSON.stringify(cur) !== lastSaved) {
+        const diff = {};
+        let diffCount = 0;
+        for (const [k, v] of Object.entries(cur)) {
+          if (lastSavedMap[k] !== v) {
+            diff[k] = v;
+            diffCount++;
+          }
+        }
+        if (diffCount > 0) {
           navigator.sendBeacon(
             `/api/data?company=${encodeURIComponent(co)}`,
-            JSON.stringify({ data: cur })
+            JSON.stringify({ data: diff, delta: true })
           );
         }
       });

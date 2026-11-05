@@ -1,3 +1,6 @@
+# Local backups
+backups/
+
 # Dependencies
 node_modules/
 
