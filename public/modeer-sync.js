@@ -21,6 +21,7 @@
   function setActiveCompany(company) {
     try {
       localStorage.setItem('modeer_active_company', company);
+      localStorage.setItem('modeer_company', company);
       const url = new URL(window.location.href);
       url.searchParams.set('company', company);
       window.location.href = url.toString();
@@ -170,31 +171,35 @@
         position: static !important;
         display: inline-flex !important;
         align-items: center !important;
-        gap: 6px !important;
-        background: rgba(255, 255, 255, 0.12) !important;
-        border: 1px solid rgba(255, 255, 255, 0.22) !important;
-        padding: 3px 8px !important;
+        gap: 8px !important;
+        background: rgba(255, 255, 255, 0.18) !important;
+        border: 1px solid rgba(255, 255, 255, 0.35) !important;
+        padding: 4px 10px !important;
         border-radius: 8px !important;
         color: #fff !important;
-        font-size: 11.5px !important;
+        font-size: 12px !important;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.15) !important;
       }
       #modeer-company-nav.modeer-nav-docked select {
         background: transparent !important;
-        color: #fff !important;
+        color: #ffffff !important;
         font-weight: 700 !important;
         border: 0 !important;
         outline: 0 !important;
         cursor: pointer !important;
-        font-size: 11.5px !important;
+        font-size: 12.5px !important;
       }
       #modeer-company-nav.modeer-nav-docked select option {
         color: #0f172a !important;
-        background: #fff !important;
+        background: #ffffff !important;
       }
       #modeer-company-nav.modeer-nav-docked .nav-label {
-        color: #bfdbfe !important;
-        font-weight: 600 !important;
-        font-size: 11px !important;
+        color: #93c5fd !important;
+        font-weight: 700 !important;
+        font-size: 12px !important;
+        display: inline-flex !important;
+        align-items: center !important;
+        gap: 4px !important;
       }
       #modeer-company-nav.modeer-nav-docked .nav-sep {
         color: rgba(255,255,255,0.4) !important;
@@ -280,16 +285,16 @@
     const active = getActiveCompany();
     const isEn = (localStorage.getItem('acc_lang') === 'en');
 
-    // Label
+    // Label with Icon
     const label = document.createElement('span');
     label.className = 'nav-label';
-    label.textContent = isEn ? 'Co:' : 'الشركة:';
+    label.innerHTML = "<span>🏢</span> <span>" + (isEn ? "Company:" : "الشركة:") + "</span>";
     nav.appendChild(label);
 
     // Company dropdown
     const sel = document.createElement('select');
     sel.className = 'nav-select';
-    const known = companies && companies.length ? companies.map((c) => c.id) : ['Tijarahub', 'VOOM', 'Commerc Of Agency'];
+    const known = companies && companies.length ? companies.map((c) => (c.name || c.id)).filter(Boolean) : ['Tijarahub', 'Commerc Of Agency'];
     if (!known.includes(active)) known.push(active);
 
     known.forEach((co) => {
@@ -302,14 +307,21 @@
 
     const addOpt = document.createElement('option');
     addOpt.value = '__new__';
-    addOpt.textContent = isEn ? '+ New company...' : '+ شركة جديدة...';
+    addOpt.textContent = isEn ? '➕ New company...' : '➕ شركة جديدة...';
     sel.appendChild(addOpt);
 
     sel.onchange = (e) => {
       if (e.target.value === '__new__') {
         const name = prompt(isEn ? 'Enter new company name:' : 'اكتب اسم الشركة الجديدة:');
         if (name && name.trim()) {
-          setActiveCompany(name.trim());
+          const compName = name.trim();
+          fetch('/api/companies', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id: compName, name: compName })
+          }).finally(() => {
+            setActiveCompany(compName);
+          });
         } else {
           sel.value = active;
         }
@@ -648,7 +660,7 @@
             autosyncTimer = setInterval(tick, 2000);
           }
           if (!multiUserSyncTimer) {
-            multiUserSyncTimer = setInterval(pollMultiUserLedger, 12000);
+            multiUserSyncTimer = setInterval(pollMultiUserLedger, 25000);
             setTimeout(pollMultiUserLedger, 1500);
           }
 
@@ -753,7 +765,7 @@
           autosyncTimer = setInterval(tick, 5000);
         }
         if (!multiUserSyncTimer) {
-          multiUserSyncTimer = setInterval(pollMultiUserLedger, 12000);
+          multiUserSyncTimer = setInterval(pollMultiUserLedger, 25000);
           setTimeout(pollMultiUserLedger, 2000);
         }
 

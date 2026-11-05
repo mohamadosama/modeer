@@ -1061,6 +1061,26 @@ export default {
           return jsonResponse({ company, currencies: results || [] }, 200, cors);
         }
 
+        // 16. Lightweight Server-Side Update Ping (Saves bandwidth & D1 row reads)
+        if (url.pathname === '/api/v2/updates' && request.method === 'GET') {
+          const session = await authenticateRequest(request, env);
+          if (!session) return problemDetails('Unauthorized', 401, 'Authentication required.', url.pathname, [], cors);
+          const company = url.searchParams.get('company') || session.company || 'Tijarahub';
+          const since = url.searchParams.get('since') || '1970-01-01T00:00:00.000Z';
+
+          const check = await env.DB.prepare(
+            'SELECT COUNT(*) as cnt, MAX(updated_at) as last_updated FROM vouchers WHERE company_id = ? AND updated_at > ?'
+          ).bind(company, since).first();
+
+          const count = (check && check.cnt) || 0;
+          return jsonResponse({
+            company,
+            has_updates: count > 0,
+            count,
+            last_updated: (check && check.last_updated) || since
+          }, 200, cors);
+        }
+
         // ----------------- Protected Attachments API -----------------
 
         // 1. Get attachment counts (PROTECTED)

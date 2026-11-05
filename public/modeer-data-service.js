@@ -192,17 +192,42 @@
     },
 
     /**
+     * Ultra-lightweight ping: checks if vouchers changed on server (only 1 fast D1 read)
+     */
+    async checkUpdates(company, since) {
+      const params = new URLSearchParams();
+      if (company) params.set('company', company);
+      if (since) params.set('since', since);
+      const res = await fetch(`/api/v2/updates?${params.toString()}`);
+      const { data } = await handleResponse(res);
+      return data;
+    },
+
+    /**
      * Multi-user Ledger Delta Sync:
-     * Pulls remote transactions posted or modified by concurrent users and merges them
-     * into local storage without overwriting uncommitted edits.
+     * Uses ultra-lightweight server pinging before fetching.
+     * Only transfers full voucher data when changes actually occur.
      */
     async syncLedgerDelta(company) {
       try {
-        const remote = await this.getVouchers(company, { limit: 100 });
+        let lastSync = localStorage.getItem('modeer_last_v_sync') || '1970-01-01T00:00:00.000Z';
+
+        // 1. FAST PING: Ask server if any changes happened since last sync
+        const ping = await this.checkUpdates(company, lastSync);
+        if (!ping || !ping.has_updates) {
+          // Server reports no updates! Exit immediately without downloading vouchers.
+          return { updated: false, count: 0, checked: true };
+        }
+
+        // 2. Fetch vouchers only when updates exist
+        const remote = await this.getVouchers(company, { limit: 50 });
         const remoteVouchers = remote.vouchers || remote.data || [];
         const remoteLines = remote.lines || [];
 
-        if (!remoteVouchers.length) return { updated: false, count: 0 };
+        if (!remoteVouchers.length) {
+          localStorage.setItem('modeer_last_v_sync', ping.last_updated);
+          return { updated: false, count: 0 };
+        }
 
         let localRows = [];
         try {
@@ -284,6 +309,8 @@
             }
           }
         }
+
+        localStorage.setItem('modeer_last_v_sync', ping.last_updated);
 
         if (changed) {
           localStorage.setItem('acc_rows', JSON.stringify(localRows));
