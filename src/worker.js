@@ -5,6 +5,7 @@
  */
 
 import { handleMcpRequest, MCP_TOOLS_DEFINITIONS, MCP_SERVER_INFO } from './mcp.js';
+import { handleAuthorizeRequest, handleTokenRequest, handleOAuthMetadata } from './oauth.js';
 
 function corsHeaders(request) {
   const origin = request.headers.get('Origin') || '*';
@@ -182,6 +183,19 @@ export default {
           'Access-Control-Allow-Origin': '*'
         }
       });
+    }
+
+    // ----------------- OAuth 2.0 Authorization Server -----------------
+    if (url.pathname === '/oauth/authorize') {
+      return await handleAuthorizeRequest(request, env, authenticateRequest, resolveCompanyId, verifyPassword);
+    }
+
+    if (url.pathname === '/oauth/token') {
+      return await handleTokenRequest(request, env, cors);
+    }
+
+    if (url.pathname === '/.well-known/oauth-authorization-server' || url.pathname === '/.well-known/openid-configuration') {
+      return handleOAuthMetadata(request, cors);
     }
 
     // ----------------- Model Context Protocol (MCP) Server -----------------

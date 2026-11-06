@@ -12,6 +12,9 @@ servers:
     description: Production Cloudflare Edge Server
 
 security:
+  - OAuth2:
+      - read
+      - write
   - BearerAuth: []
   - CookieAuth: []
 
@@ -467,6 +470,16 @@ paths:
 
 components:
   securitySchemes:
+    OAuth2:
+      type: oauth2
+      description: "Modeer OAuth 2.0 Browser-Based Authorization Flow for ChatGPT and Claude"
+      flows:
+        authorizationCode:
+          authorizationUrl: https://modeer.modeer.workers.dev/oauth/authorize
+          tokenUrl: https://modeer.modeer.workers.dev/oauth/token
+          scopes:
+            read: "Read Chart of Accounts, vouchers, cash movements, and reports"
+            write: "Create vouchers and manage ledger entries"
     BearerAuth:
       type: http
       scheme: bearer

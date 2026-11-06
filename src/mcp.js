@@ -211,19 +211,54 @@ async function resolveCompany(env, input) {
   }
 }
 
+// Enterprise RBAC: Enforce user permissions
+function enforceRole(session, allowedRoles, actionName) {
+  const userRole = (session && session.role) || 'viewer';
+  if (!allowedRoles.includes(userRole)) {
+    throw new Error(`Permission Denied: Action "${actionName}" requires one of the following roles: [${allowedRoles.join(', ')}]. Current user "${session?.username || 'unknown'}" has role "${userRole}".`);
+  }
+}
+
+// Enterprise Multi-Tenant Access: Ensure AI only accesses company user is authorized for
+async function enforceCompanyAccess(env, session, requestedCompany) {
+  const targetCompany = await resolveCompany(env, requestedCompany || (session && session.company));
+
+  if (!session) {
+    throw new Error('Authentication required.');
+  }
+
+  // Admin has global access across companies
+  if (session.role === 'admin') {
+    return targetCompany;
+  }
+
+  // Scoped user: can only operate on their authorized company
+  const authorizedCompany = await resolveCompany(env, session.company);
+  if (targetCompany !== authorizedCompany) {
+    throw new Error(`Permission Denied: User "${session.username}" is authorized only for company "${authorizedCompany}". Access to "${targetCompany}" is prohibited.`);
+  }
+
+  return targetCompany;
+}
+
 // Tool Implementation Handlers
-async function handleListCompanies(env) {
-  const { results } = await env.DB.prepare(
-    'SELECT id, name, base_currency, created_at FROM companies ORDER BY name ASC'
-  ).all();
+async function handleListCompanies(env, session) {
+  let sql = 'SELECT id, name, base_currency, created_at FROM companies';
+  const params = [];
+  if (session && session.role !== 'admin' && session.company) {
+    sql += ' WHERE id = ? OR name = ?';
+    params.push(session.company, session.company);
+  }
+  sql += ' ORDER BY name ASC';
+  const { results } = await env.DB.prepare(sql).bind(...params).all();
   return {
     total: (results || []).length,
     companies: results || []
   };
 }
 
-async function handleGetChartOfAccounts(env, args) {
-  const company = await resolveCompany(env, args.company);
+async function handleGetChartOfAccounts(env, args, session) {
+  const company = await enforceCompanyAccess(env, session, args.company);
   let sql = 'SELECT code, name, name_ar, classification, sub, parent_code, is_active FROM accounts WHERE company_id = ?';
   const params = [company];
 
@@ -249,8 +284,8 @@ async function handleGetChartOfAccounts(env, args) {
   };
 }
 
-async function handleListVouchers(env, args) {
-  const company = await resolveCompany(env, args.company);
+async function handleListVouchers(env, args, session) {
+  const company = await enforceCompanyAccess(env, session, args.company);
   let sql = `
     SELECT v.id, v.voucher_no, v.voucher_date, v.period, v.description, v.status, v.created_by, v.posted_at, v.version,
       COALESCE(SUM(l.base_debit), 0) as total_debit,
@@ -283,8 +318,8 @@ async function handleListVouchers(env, args) {
   };
 }
 
-async function handleGetVoucher(env, args) {
-  const company = await resolveCompany(env, args.company);
+async function handleGetVoucher(env, args, session) {
+  const company = await enforceCompanyAccess(env, session, args.company);
   const vNo = String(args.voucher_no || '').trim();
 
   const voucher = await env.DB.prepare(
@@ -306,8 +341,16 @@ async function handleGetVoucher(env, args) {
 }
 
 async function handleCreateVoucher(env, args, session) {
-  const company = await resolveCompany(env, args.company);
+  const company = await enforceCompanyAccess(env, session, args.company);
   const status = args.status === 'posted' ? 'posted' : 'draft';
+
+  // Role permissions check
+  if (status === 'posted') {
+    enforceRole(session, ['manager', 'admin'], 'Direct Posting to Ledger');
+  } else {
+    enforceRole(session, ['accountant', 'manager', 'admin'], 'Create Draft Voucher');
+  }
+
   const lines = Array.isArray(args.lines) ? args.lines : [];
 
   if (lines.length < 2) {
@@ -401,7 +444,8 @@ async function handleCreateVoucher(env, args, session) {
 }
 
 async function handlePostVoucher(env, args, session) {
-  const company = await resolveCompany(env, args.company);
+  const company = await enforceCompanyAccess(env, session, args.company);
+  enforceRole(session, ['manager', 'admin'], 'Post Voucher to Ledger');
   const vId = String(args.voucher_id || '').trim();
 
   const voucher = await env.DB.prepare(
@@ -424,7 +468,8 @@ async function handlePostVoucher(env, args, session) {
     throw new Error(`Cannot post: Imbalance between debits (${totDr.toFixed(2)}) and credits (${totCr.toFixed(2)}).`);
   }
 
-  const vUser = (session && session.username) || 'ai-agent';
+  const actualUser = (session && session.username) || 'AI Assistant';
+  const vUser = `${actualUser} (via AI Assistant)`;
   const now = new Date().toISOString();
   await env.DB.prepare(
     'UPDATE vouchers SET status = "posted", posted_at = ?, posted_by = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?'
@@ -441,7 +486,8 @@ async function handlePostVoucher(env, args, session) {
 }
 
 async function handleCancelVoucher(env, args, session) {
-  const company = await resolveCompany(env, args.company);
+  const company = await enforceCompanyAccess(env, session, args.company);
+  enforceRole(session, ['manager', 'admin'], 'Cancel Voucher');
   const vId = String(args.voucher_id || '').trim();
   const reason = String(args.reason || '').trim();
   if (!reason) throw new Error('Reason for cancellation is required for audit trail.');
@@ -453,7 +499,8 @@ async function handleCancelVoucher(env, args, session) {
   if (!voucher) throw new Error(`Voucher "${vId}" not found in company "${company}".`);
   if (voucher.status === 'cancelled') return { success: true, message: `Voucher is already cancelled.`, voucher };
 
-  const updatedDesc = `${voucher.description || ''} [Cancelled by ${session && session.username || 'ai-agent'}: ${reason}]`.trim();
+  const actualUser = (session && session.username) || 'AI Assistant';
+  const updatedDesc = `${voucher.description || ''} [Cancelled by ${actualUser} via AI Assistant: ${reason}]`.trim();
   await env.DB.prepare(
     'UPDATE vouchers SET status = "cancelled", description = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?'
   ).bind(updatedDesc, voucher.id).run();
@@ -468,7 +515,8 @@ async function handleCancelVoucher(env, args, session) {
 }
 
 async function handleAmendVoucher(env, args, session) {
-  const company = await resolveCompany(env, args.company);
+  const company = await enforceCompanyAccess(env, session, args.company);
+  enforceRole(session, ['manager', 'admin'], 'Amend Voucher');
   const vId = String(args.voucher_id || '').trim();
   const reason = String(args.reason || '').trim();
   const lines = Array.isArray(args.lines) ? args.lines : [];
@@ -482,7 +530,8 @@ async function handleAmendVoucher(env, args, session) {
   if (!original) throw new Error(`Original voucher "${vId}" not found.`);
 
   // Cancel original
-  const cancelNote = `${original.description || ''} [Amended: ${reason}]`.trim();
+  const actualUser = (session && session.username) || 'AI Assistant';
+  const cancelNote = `${original.description || ''} [Amended by ${actualUser} via AI Assistant: ${reason}]`.trim();
   await env.DB.prepare('UPDATE vouchers SET status = "cancelled", description = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').bind(cancelNote, original.id).run();
 
   // Create new voucher with amended_from
@@ -504,8 +553,8 @@ async function handleAmendVoucher(env, args, session) {
   };
 }
 
-async function handleGetCashMovement(env, args) {
-  const company = await resolveCompany(env, args.company);
+async function handleGetCashMovement(env, args, session) {
+  const company = await enforceCompanyAccess(env, session, args.company);
   let sql = `
     SELECT l.line_no, l.account_code, l.gl_name, l.base_debit, l.base_credit, l.notes, v.voucher_no, v.voucher_date
     FROM voucher_lines l
@@ -545,8 +594,8 @@ async function handleGetCashMovement(env, args) {
   };
 }
 
-async function handleGetTrialBalance(env, args) {
-  const company = await resolveCompany(env, args.company);
+async function handleGetTrialBalance(env, args, session) {
+  const company = await enforceCompanyAccess(env, session, args.company);
   let sql = `
     SELECT a.code, a.name, a.name_ar, a.classification,
       COALESCE(SUM(l.base_debit), 0) as total_debit,
@@ -595,8 +644,8 @@ async function handleGetTrialBalance(env, args) {
   };
 }
 
-async function handleGetFinancialSummary(env, args) {
-  const company = await resolveCompany(env, args.company);
+async function handleGetFinancialSummary(env, args, session) {
+  const company = await enforceCompanyAccess(env, session, args.company);
 
   // Vouchers breakdown
   const vStats = await env.DB.prepare(
@@ -607,7 +656,7 @@ async function handleGetFinancialSummary(env, args) {
   (vStats.results || []).forEach(r => { counts[r.status] = r.cnt; });
 
   // P&L and Balance Sheet summary from posted lines
-  const tb = await handleGetTrialBalance(env, { company });
+  const tb = await handleGetTrialBalance(env, { company }, session);
 
   let totalAssets = 0;
   let totalLiabilities = 0;
@@ -654,7 +703,8 @@ async function handleGetFinancialSummary(env, args) {
   };
 }
 
-async function handleCreateCompany(env, args) {
+async function handleCreateCompany(env, args, session) {
+  enforceRole(session, ['admin'], 'Create New Company');
   const name = String(args.name || '').trim();
   const id = name.slice(0, 50);
   const baseCurrency = String(args.base_currency || 'USD').toUpperCase().slice(0, 3);
@@ -694,13 +744,13 @@ async function handleCreateCompany(env, args) {
 async function dispatchToolCall(env, name, args, session) {
   switch (name) {
     case 'modeer_list_companies':
-      return await handleListCompanies(env);
+      return await handleListCompanies(env, session);
     case 'modeer_get_chart_of_accounts':
-      return await handleGetChartOfAccounts(env, args);
+      return await handleGetChartOfAccounts(env, args, session);
     case 'modeer_list_vouchers':
-      return await handleListVouchers(env, args);
+      return await handleListVouchers(env, args, session);
     case 'modeer_get_voucher':
-      return await handleGetVoucher(env, args);
+      return await handleGetVoucher(env, args, session);
     case 'modeer_create_voucher':
       return await handleCreateVoucher(env, args, session);
     case 'modeer_post_voucher':
@@ -710,22 +760,22 @@ async function dispatchToolCall(env, name, args, session) {
     case 'modeer_amend_voucher':
       return await handleAmendVoucher(env, args, session);
     case 'modeer_get_cash_movement':
-      return await handleGetCashMovement(env, args);
+      return await handleGetCashMovement(env, args, session);
     case 'modeer_get_trial_balance':
-      return await handleGetTrialBalance(env, args);
+      return await handleGetTrialBalance(env, args, session);
     case 'modeer_get_financial_summary':
-      return await handleGetFinancialSummary(env, args);
+      return await handleGetFinancialSummary(env, args, session);
     case 'modeer_create_company':
-      return await handleCreateCompany(env, args);
+      return await handleCreateCompany(env, args, session);
     default:
       throw new Error(`Unknown tool: ${name}`);
   }
 }
 
 // Dispatch resource read
-async function dispatchResourceRead(env, uri) {
+async function dispatchResourceRead(env, uri, session) {
   if (uri === 'modeer://companies') {
-    const data = await handleListCompanies(env);
+    const data = await handleListCompanies(env, session);
     return {
       contents: [{
         uri,
@@ -806,7 +856,7 @@ export async function processMcpMessage(msg, env, session) {
       case 'resources/read': {
         const uri = params && params.uri;
         if (!uri) throw new Error('Missing uri parameter');
-        const res = await dispatchResourceRead(env, uri);
+        const res = await dispatchResourceRead(env, uri, session);
         return { jsonrpc: '2.0', id, result: res };
       }
 
@@ -890,3 +940,4 @@ export async function handleMcpRequest(request, env, session, cors) {
     headers: { 'Content-Type': 'application/json', ...cors }
   });
 }
+

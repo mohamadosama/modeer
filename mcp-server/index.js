@@ -123,3 +123,4 @@ rl.on('close', () => {
   console.error('[Modeer MCP] Process stdin closed, exiting.');
   process.exit(0);
 });
+

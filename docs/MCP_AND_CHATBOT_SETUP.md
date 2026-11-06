@@ -1,39 +1,95 @@
 # دليل تفعيل وربط نظام مدير (Modeer ERP) بروبوتات الذكاء الاصطناعي (Claude & ChatGPT)
-## Modeer Model Context Protocol (MCP) & AI Chatbot Integration Guide
+## Modeer Model Context Protocol (MCP) & OAuth 2.0 Integration Guide
 
-تم تجهيز نظام **Modeer ERP** بأحدث معايير بروتوكول سياق النماذج **Model Context Protocol (MCP)** الصادر عن شركة Anthropic، بالإضافة إلى واجهات **OpenAPI 3.1** المتوافقة 100% مع ميزات **ChatGPT Custom Actions** من شركة OpenAI.
-
----
-
-### بيانات الاتصال والمفاتيح المعتمدة (Production Credentials)
-
-* **رابط موصل MCP السحابي (Cloudflare Edge):**  
-  `https://modeer.modeer.workers.dev/api/mcp`
-* **رابط موصل الأحداث الحية (MCP SSE Stream):**  
-  `https://modeer.modeer.workers.dev/api/mcp/sse`
-* **رابط مواصفات OpenAPI الجاهزة للاستيراد:**  
-  `https://modeer.modeer.workers.dev/openapi.json`
-* **رابط سياسة الخصوصية (مطلوب لـ ChatGPT):**  
-  `https://modeer.modeer.workers.dev/privacy`
-* **مفتاح الـ API الدائم والمخصص للروبوتات (Master AI Bot Key):**  
-  `modeer_sk_live_master_ai_agent_production_key_2026`
+يدعم نظام **Modeer ERP** خيارين متقدمين ومحميين لتكامل روبوتات الذكاء الاصطناعي (ChatGPT, Claude, Cursor):
+1. **ربط الويب المباشر عبر بروتوكول OAuth 2.0 (موصى به لـ ChatGPT Plugins & Custom GPTs):**  
+   يقوم المستخدم بتسجيل الدخول بحسابه عبر المتصفح وتفويض الروبوت، ولا يحتاج إلى كتابة أو كشف أي مفاتيح API يدوياً، ويعمل الروبوت حصراً بنفس صلاحيات ودور المستخدم والشركة المحددة.
+2. **بروتوكول سياق النماذج المباشر (Native Model Context Protocol - MCP):**  
+   يعمل على خوادم Cloudflare Edge السحابية عبر endpoints تدعم كلاً من JSON-RPC المباشر والبث الحي (SSE).
 
 ---
 
-## 1. ربط Claude Desktop (تطبيق كلود للكمبيوتر)
+### بيانات الاتصال المعتمدة على سيرفر الإنتاج (Production Endpoints)
 
-تطبيق **Claude Desktop** يدعم بروتوكول MCP مباشرة، مما يتيح لكلود فحص الحسابات، قراءة حركة الخزينة، وإدخال قيود اليومية المحاسبية تلقائياً.
+| الخاصية | الرابط / القيمة |
+| :--- | :--- |
+| **رابط موصل MCP السحابي (Edge MCP)** | `https://modeer.modeer.workers.dev/api/mcp` |
+| **رابط موصل الأحداث الحية (MCP SSE Stream)** | `https://modeer.modeer.workers.dev/api/mcp/sse` |
+| **رابط تسجيل الدخول والتفويض (OAuth Authorize URL)** | `https://modeer.modeer.workers.dev/oauth/authorize` |
+| **رابط إصدار التوكن (OAuth Token URL)** | `https://modeer.modeer.workers.dev/oauth/token` |
+| **رابط مواصفات OpenAPI الجاهزة** | `https://modeer.modeer.workers.dev/openapi.json` |
+| **رابط سياسة الخصوصية (Privacy Policy)** | `https://modeer.modeer.workers.dev/privacy` |
+| **Client ID الافتراضي** | `chatgpt-modeer` |
+| **Client Secret الافتراضي** | `modeer_oauth_secret_2026` |
 
-### خطوات الإعداد:
-1. افتح ملف إعدادات كلود على جهازك:
-   * **ويندوز (Windows):**  
-     `%APPDATA%\Claude\claude_desktop_config.json`
-   * **ماك (macOS):**  
-     `~/Library/Application Support/Claude/claude_desktop_config.json`
-   * **لينكس (Linux):**  
-     `~/.config/Claude/claude_desktop_config.json`
+---
 
-2. أضف إعداد خادم `modeer` داخل كائن `mcpServers`:
+## 1. كيف تجيب على استفسار ChatGPT Plugin Creator؟
+
+عند بناء إضافة داخل **ChatGPT Plugin Creator** وسؤالك:
+> *"Which approach should we use?*  
+> *A — Build the MCP adapter for Modeer (recommended if no MCP server exists).*  
+> *B — I already have an MCP endpoint."*
+
+اختر فوراً: **`B — I already have an MCP endpoint`**
+وقم بتزويده برابط الـ MCP السحابي:
+```text
+https://modeer.modeer.workers.dev/api/mcp
+```
+*(أو رابط SSE: `https://modeer.modeer.workers.dev/api/mcp/sse`)*  
+لأن نظام Modeer يمتلك بالفعل خادم MCP أصلي (Native MCP Server) مدمج ومبرمج على مستوى الخادم.
+
+---
+
+## 2. تفعيل الاتصال عبر OAuth 2.0 (تسجيل الدخول بالمتصفح)
+
+تعتبر هذه الطريقة هي الأكثر أماناً واحترافية؛ حيث يظهر للمستخدم في ChatGPT زر **"Connect to Modeer"**؛ وعند الضغط عليه:
+1. تفتح نافذة متصفح رسمية لنظام مدير بشعار النظام.
+2. يسجل المستخدم دخوله باسمه وكلمة مروره ويختار الشركة التي يريد تفويض الروبوت عليها.
+3. يضغط **"تفويض وسماح بالوصول (Authorize)"**.
+4. يغلق المتصفح ويرتبط شات جي بي تي تلقائياً، مع تقييده التام بصلاحيات ذلك المستخدم!
+
+### خطوات ضبط OAuth داخل ChatGPT (Actions / GPT Configuration):
+1. افتح **[ChatGPT](https://chatgpt.com)** -> **Explore GPTs** -> **+ Create**.
+2. في تبويب **Configure** -> انزل إلى **Actions** واضغط **Create new action**.
+3. بجانب **Schema** اضغط **Import from URL** وضع:  
+   `https://modeer.modeer.workers.dev/openapi.json`
+4. في إعدادات الأمان والتسجيل (**Authentication**):
+   * اضغط على الترس بجانب Authentication واختر **OAuth**.
+   * **Client ID:** `chatgpt-modeer`
+   * **Client Secret:** `modeer_oauth_secret_2026`
+   * **Authorization URL:** `https://modeer.modeer.workers.dev/oauth/authorize`
+   * **Token URL:** `https://modeer.modeer.workers.dev/oauth/token`
+   * **Scope:** `read write`
+   * **Token Exchange Method:** `Default (POST / Basic)`
+5. في حقل **Privacy Policy URL**:
+   * ضع: `https://modeer.modeer.workers.dev/privacy`
+6. احفظ الإعدادات بالضغط على **Save**.
+
+---
+
+## 3. حماية الصلاحيات والرقابة المحاسبية (RBAC & Guardrails)
+
+بمجرد ربط الروبوت عبر حسابه، **يطبق النظام مبدأ الصلاحيات الأدنى (Least Privilege)** بناءً على دور المستخدم الفعلي في نظام مدير:
+
+1. **المشاهد (Viewer):**
+   * يحق للروبوت فقط: قراءة دليل الحسابات، استعراض كشف حركة الخزينة، الاطلاع على ميزان المراجعة والتقارير المالية.
+   * **محظور تماماً:** إنشاء قيود، تعديل مسودات، أو ترحيل القيود (تُرفض فورا برسالة: *Permission Denied: Viewer role cannot create vouchers*).
+2. **المحاسب (Accountant):**
+   * يحق للروبوت: إنشاء قيود يومية بحالة مسودة (`draft`) للمراجعة، وقراءة كافة التقارير.
+   * **محظور تماماً:** الترحيل النهائي المباشر لدفتر الأستاذ العام (`posted`) أو إلغاء القيود القديمة إلا بموافقة المدير.
+3. **المدير المالي والمسؤول (Manager / Admin):**
+   * يحق للروبوت: إنشاء القيود، ترحيلها (`post`)، إلغاؤها (`cancel`)، أو تعديلها بديلاً (`amend`).
+4. **عزل الشركات الصارم (Multi-Tenant Isolation):**
+   * لا يمكن للروبوت استعراض أو لمس بيانات أي شركة أخرى غير الشركة التي اختارها المستخدم وصرح له بالوصول إليها أثناء خطوة الـ OAuth.
+5. **سجل التدقيق القانوني (Immutable Audit Trail):**
+   * أي عملية يقوم بها الروبوت تُسجل في قاعدة البيانات باسم المستخدم الصريح متبوعاً بـ `(via AI Assistant)` (مثال: `sameh malek (via AI Assistant)` أو `mohamadosama (via AI Assistant)`).
+
+---
+
+## 4. ربط Claude Desktop & Claude Code
+
+تطبيق Claude على جهازك يعمل بموصل محلي سريع (`mcp-server/index.js`):
 
 ```json
 {
@@ -45,7 +101,6 @@
       ],
       "env": {
         "MODEER_API_URL": "https://modeer.modeer.workers.dev",
-        "MODEER_API_KEY": "modeer_sk_live_master_ai_agent_production_key_2026",
         "MODEER_DEFAULT_COMPANY": "Commercial Agency"
       }
     }
@@ -53,87 +108,19 @@
 }
 ```
 
-*(ملاحظة: إذا كنت تنقل المجلد لجهاز آخر، فقط ضع المسار الصحيح لملف `index.js` على ذلك الجهاز).*
-
-3. أعد تشغيل تطبيق Claude Desktop. ستظهر أيقونة المطرقة 🔨 (الأدوات) داخل المحادثة وبها 12 أداة محاسبية جاهزة!
-
 ---
 
-## 2. ربط ChatGPT (إنشاء Custom GPT في OpenAI)
+## 5. قائمة الأدوات المحاسبية المتاحة (12 أداة)
 
-يمكنك إنشاء بوت مالي خاص بشركتك داخل ChatGPT عبر ميزة **Actions**:
-
-### خطوات الإعداد:
-1. ادخل إلى **[ChatGPT](https://chatgpt.com)** ثم اضغط على **Explore GPTs** ثم **+ Create**.
-2. في تبويب **Configure**:
-   * **Name:** مستشار مدير المالي (Modeer Financial Advisor)
-   * **Description:** إدارة الحسابات والقيود اليومية والتقارير المالية لشركات نظام مدير عبر واجهات ERP الذكية.
-   * **Instructions:** انسخ النص التالي وضعه في صندوق التعليمات:
-     ```text
-     أنت المستشار المالي والمحاسبي الذكي لنظام Modeer ERP.
-     لديك وصول مباشر إلى قاعدة البيانات السحابية عبر Actions.
-     القواعد المحاسبية الصارمة:
-     1. التوازن الثنائي (Double-Entry): إجمالي المدين = إجمالي الدائن دائماً.
-     2. دورة المستند: أنشئ القيود الجديدة بحالة 'draft' (مسودة) أولاً، ثم اطلب تأكيد المستخدم قبل الترحيل 'posted'.
-     3. لا يمكن حذف أو تعديل أي قيد مرحل؛ بل يتم استخدام الإلغاء (Cancel) أو التعديل البديل (Amend).
-     4. عند طلب تقرير الخزينة أو الأرباح، استخدم الأدوات واستخرج الأرقام الدقيقة للشركة المطلوبة.
-     ```
-3. انزل لأسفل واضغط على **Create new action**:
-   * بجانب **Schema**، اضغط على **Import from URL**.
-   * الصق الرابط التالي واضغط **Import**:  
-     `https://modeer.modeer.workers.dev/openapi.json`
-   * سيقوم ChatGPT تلقائياً بقراءة كافة نقاط النهاية، المعاملات، ودليل الحسابات!
-4. إعداد التوثيق (**Authentication**):
-   * اضغط على ترس الإعدادات بجانب Authentication:
-   * **Authentication Type:** اختر **API Key**.
-   * **Auth Type:** اختر **Bearer** (أو Custom Header باسم `X-API-Key`).
-   * **API Key:** الصق المفتاح:  
-     `modeer_sk_live_master_ai_agent_production_key_2026`
-5. في حقل **Privacy Policy URL**:
-   * ضع الرابط: `https://modeer.modeer.workers.dev/privacy`
-6. اضغط **Save** أو **Publish**. الآن أصبح شات جي بي تي متصلاً بالنظام الحي مباشرة!
-
----
-
-## 3. ربط أدوات التطوير وCursor وClaude Code
-
-### لبرنامج Cursor IDE:
-في إعدادات Cursor (Settings -> Features -> MCP -> Add New MCP Server):
-* **Name:** `modeer`
-* **Type:** `command`
-* **Command:** `node /home/mosama/projects/modeer/mcp-server/index.js`
-
-### لأداة Claude Code CLI:
-نفّذ الأمر التالي في سطر الأوامر:
-```bash
-claude mcp add modeer node /home/mosama/projects/modeer/mcp-server/index.js
-```
-
----
-
-## 4. قائمة الأدوات المحاسبية المتاحة للروبوت (12 أداة)
-
-| اسم الأداة (Tool Name) | الوظيفة المحاسبية |
-| :--- | :--- |
-| `modeer_list_companies` | استعراض جميع الشركات المسجلة وعملتها وتواريخ إنشائها |
-| `modeer_get_chart_of_accounts` | البحث واستعراض دليل الحسابات وفئاته (أصول، خصوم، إيرادات...) |
-| `modeer_list_vouchers` | استعراض سجل القيود اليومية مع فلترة الحالات والتواريخ |
-| `modeer_get_voucher` | قراءة تفاصيل قيد محدد بأسطره وأطرافه وأسعاره وملاحظاته |
-| `modeer_create_voucher` | إنشاء قيد يومية (مسودة أو مرحل) مع التحقق من توازن القيد وصحة الحسابات |
-| `modeer_post_voucher` | ترحيل قيد مسودة إلى دفتر الأستاذ العام وتثبيته قانونياً |
-| `modeer_cancel_voucher` | إلغاء قيد مرحل أو مسودة مع توثيق سبب الإلغاء في سجل التدقيق |
-| `modeer_amend_voucher` | تعديل قيد مرحل عبر إلغائه وإنشاء قيد بديل مرتبط به تلقائياً |
-| `modeer_get_cash_movement` | كشف حركة النقدية والبنوك مع إجمالي المقبوضات والمدفوعات والرصيد |
-| `modeer_get_trial_balance` | ميزان المراجعة الشامل وتأكيد توازن الحسابات الإجمالية |
-| `modeer_get_financial_summary` | ملخص المؤشرات المالية: الأصول، الخصوم، الإيرادات، المصروفات، وصافي الربح |
-| `modeer_create_company` | إنشاء شركة جديدة مع التوليد التلقائي لدليل الحسابات والعملات |
-
----
-
-## 5. أمثلة لأسئلة وأوامر يمكنك توجيهها للروبوت بعد الربط
-
-* *"ما هو الموقف المالي وحركة الخزينة لشركة الوكالة التجارية هذا الشهر؟"*
-* *"أظهر لي الحسابات التابعة للأصول النقدية في دليل حسابات تجارة هاب."*
-* *"أنشئ قيد يومية مسودة لسداد مصروفات إيجار بقيمة 500 دولار نقداً من الخزينة الرئيسية."*
-* *"هل ميزان المراجعة متوازن في شركة Commercial Agency؟ وما هو صافي أرباح الفترة؟"*
-* *"راجع القيد رقم 2 وأخبرني بأطرافه وإذا كان مرحلاً أم مسودة."*
+* `modeer_list_companies`: استعراض الشركات المصرح بها للمستخدم.
+* `modeer_get_chart_of_accounts`: استعراض وفلترة دليل الحسابات.
+* `modeer_list_vouchers`: استعراض سجل القيود اليومية وحالاتها.
+* `modeer_get_voucher`: قراءة أسطر وتفاصيل قيد محدد.
+* `modeer_create_voucher`: إنشاء قيد يومية متوازن (وفق صلاحيات المستخدم).
+* `modeer_post_voucher`: ترحيل قيد مسودة (للمدراء فقط).
+* `modeer_cancel_voucher`: إلغاء قيد وتوثيق السبب في سجل التدقيق.
+* `modeer_amend_voucher`: إلغاء القيد القديم وإنشاء بديل مرتبط به.
+* `modeer_get_cash_movement`: كشف حركة الخزينة والبنوك والمقبوضات/المدفوعات.
+* `modeer_get_trial_balance`: ميزان المراجعة وحساب الأرصدة الختامية.
+* `modeer_get_financial_summary`: ملخص المركز المالي وصافي الأرباح.
+* `modeer_create_company`: إنشاء شركة جديدة (للمسؤول فقط).
