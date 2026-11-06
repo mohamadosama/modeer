@@ -15,6 +15,7 @@ Tests:
 import urllib.request
 import json
 import sys
+import time
 
 BASE_URL = "https://modeer.modeer.workers.dev"
 
@@ -60,7 +61,7 @@ def test_authentication():
 def test_auto_seeding_and_voucher():
     print("=== 3. Testing Auto-Seeding for New Company & Voucher Creation ===")
     admin_token = login("admin", "123456", "Commercial Agency")
-    new_co = "Test_AutoSeed_Co"
+    new_co = f"Test_Co_{int(time.time())}"
 
     # Create new company
     co_data = json.dumps({"id": new_co, "name": new_co, "base_currency": "USD"}).encode()
@@ -172,6 +173,7 @@ def test_tenant_isolation():
     print("--> Strict Tenant Isolation Verified OK! Zero Data Bleed.\n")
 
 if __name__ == "__main__":
+    test_co = None
     try:
         test_headers()
         test_authentication()
@@ -184,11 +186,12 @@ if __name__ == "__main__":
         sys.exit(1)
     finally:
         # Clean up test company
-        import subprocess
-        try:
-            subprocess.run([
-                "npx", "wrangler", "d1", "execute", "modeer-db", "--remote",
-                "--command=DELETE FROM voucher_lines WHERE company_id = 'Test_AutoSeed_Co'; DELETE FROM vouchers WHERE company_id = 'Test_AutoSeed_Co'; DELETE FROM accounts WHERE company_id = 'Test_AutoSeed_Co'; DELETE FROM currencies WHERE company_id = 'Test_AutoSeed_Co'; DELETE FROM company_storage WHERE company = 'Test_AutoSeed_Co'; DELETE FROM companies WHERE id = 'Test_AutoSeed_Co';"
-            ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
-        except Exception:
-            pass
+        if test_co:
+            import subprocess
+            try:
+                subprocess.run([
+                    "npx", "wrangler", "d1", "execute", "modeer-db", "--remote",
+                    f"--command=DELETE FROM voucher_lines WHERE company_id = '{test_co}'; DELETE FROM vouchers WHERE company_id = '{test_co}'; DELETE FROM accounts WHERE company_id = '{test_co}'; DELETE FROM currencies WHERE company_id = '{test_co}'; DELETE FROM company_storage WHERE company = '{test_co}'; DELETE FROM companies WHERE id = '{test_co}';"
+                ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+            except Exception:
+                pass
