@@ -201,16 +201,6 @@ export default {
     // ----------------- Model Context Protocol (MCP) Server -----------------
     if (url.pathname === '/api/mcp' || url.pathname === '/mcp') {
       const session = await authenticateRequest(request, env);
-      if (!session) {
-        return jsonResponse({
-          jsonrpc: '2.0',
-          id: null,
-          error: {
-            code: -32000,
-            message: 'Authentication required. Provide valid Authorization: Bearer token or X-API-Key header or ?token= query parameter.'
-          }
-        }, 401, cors);
-      }
 
       if (request.method === 'GET') {
         const token = getSessionToken(request) || '';
@@ -235,6 +225,8 @@ export default {
       if (request.method === 'POST') {
         return await handleMcpRequest(request, env, session, cors);
       }
+
+      return new Response(null, { status: 405, headers: cors });
     }
 
     if (url.pathname === '/api/mcp/sse' || url.pathname === '/mcp/sse') {

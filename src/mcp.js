@@ -243,6 +243,9 @@ async function enforceCompanyAccess(env, session, requestedCompany) {
 
 // Tool Implementation Handlers
 async function handleListCompanies(env, session) {
+  if (!session) {
+    throw new Error('Authentication required.');
+  }
   let sql = 'SELECT id, name, base_currency, created_at FROM companies';
   const params = [];
   if (session && session.role !== 'admin' && session.company) {
@@ -856,6 +859,9 @@ export async function processMcpMessage(msg, env, session) {
       case 'resources/read': {
         const uri = params && params.uri;
         if (!uri) throw new Error('Missing uri parameter');
+        if (!session) {
+          throw new Error('Authentication required to read resources. Please configure MODEER_API_KEY or authenticate via OAuth 2.0.');
+        }
         const res = await dispatchResourceRead(env, uri, session);
         return { jsonrpc: '2.0', id, result: res };
       }
@@ -864,6 +870,9 @@ export async function processMcpMessage(msg, env, session) {
         const toolName = params && params.name;
         const toolArgs = (params && params.arguments) || {};
         if (!toolName) throw new Error('Missing tool name');
+        if (!session) {
+          throw new Error('Authentication required to invoke tools. Please configure MODEER_API_KEY or authenticate via OAuth 2.0.');
+        }
 
         const output = await dispatchToolCall(env, toolName, toolArgs, session);
         return {

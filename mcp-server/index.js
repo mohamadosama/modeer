@@ -10,7 +10,7 @@
 import readline from 'node:readline';
 
 const API_URL = (process.env.MODEER_API_URL || 'https://modeer.modeer.workers.dev').replace(/\/+$/, '');
-const API_KEY = process.env.MODEER_API_KEY || process.env.MODEER_TOKEN || 'modeer_sk_live_master_ai_agent_production_key_2026';
+const API_KEY = process.env.MODEER_API_KEY || process.env.MODEER_TOKEN || 'modeer_mcp_cli_mosama_8f293b1d74e04918a391';
 const DEFAULT_COMPANY = process.env.MODEER_DEFAULT_COMPANY || 'Commercial Agency';
 
 // CLI flags for testing and status
@@ -54,6 +54,10 @@ if (process.argv.includes('--test') || process.argv.includes('--ping')) {
       })
     });
     const data = await res.json();
+    if (!res.ok || data.error) {
+      console.error('❌ Connection failed:', data.error?.message || `HTTP ${res.status}`);
+      process.exit(1);
+    }
     console.error('✅ Connection successful!');
     console.error('Server Info:', JSON.stringify(data.result?.serverInfo, null, 2));
     process.exit(0);
@@ -72,9 +76,13 @@ const rl = readline.createInterface({
   terminal: false
 });
 
+let pendingOperations = 0;
+let isClosed = false;
+
 rl.on('line', async (line) => {
   const trimmed = line.trim();
   if (!trimmed) return;
+  pendingOperations++;
 
   try {
     const msg = JSON.parse(trimmed);
@@ -107,20 +115,29 @@ rl.on('line', async (line) => {
     process.stdout.write(JSON.stringify(data) + '\n');
   } catch (err) {
     console.error('[Modeer MCP Error]', err.message);
+    let reqId = null;
+    try { reqId = JSON.parse(line.trim())?.id ?? null; } catch(e) {}
     const errResponse = {
       jsonrpc: '2.0',
-      id: null,
+      id: reqId,
       error: {
         code: -32603,
         message: `MCP Bridge Internal Error: ${err.message}`
       }
     };
     process.stdout.write(JSON.stringify(errResponse) + '\n');
+  } finally {
+    pendingOperations--;
+    if (isClosed && pendingOperations === 0) {
+      process.exit(0);
+    }
   }
 });
 
 rl.on('close', () => {
-  console.error('[Modeer MCP] Process stdin closed, exiting.');
-  process.exit(0);
+  isClosed = true;
+  if (pendingOperations === 0) {
+    process.exit(0);
+  }
 });
 
