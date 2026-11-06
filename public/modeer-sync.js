@@ -770,6 +770,9 @@
               localStorage.setItem(k, serverData[k]);
             }
           });
+          if (!serverData['acc_rows']) {
+            localStorage.setItem('acc_rows', '[]');
+          }
 
           lastSavedMap = snapshot();
           return true;

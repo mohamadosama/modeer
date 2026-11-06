@@ -276,6 +276,29 @@ export default {
             'INSERT INTO companies (id, name, base_currency) VALUES (?, ?, ?)'
           ).bind(id, name, baseCurrency).run();
 
+          // Auto-seed accounts, currencies, and company storage from template
+          try {
+            await env.DB.batch([
+              env.DB.prepare(`
+                INSERT OR IGNORE INTO accounts (id, company_id, code, name, name_ar, classification, sub, parent_code)
+                SELECT ? || '_' || code, ?, code, name, name_ar, classification, sub, parent_code
+                FROM accounts WHERE company_id = 'Commerc Of Agency'
+              `).bind(id, id),
+              env.DB.prepare(`
+                INSERT OR IGNORE INTO currencies (id, company_id, code, name, rate)
+                SELECT ? || '_' || code, ?, code, name, rate
+                FROM currencies WHERE company_id = 'Commerc Of Agency'
+              `).bind(id, id),
+              env.DB.prepare(`
+                INSERT OR REPLACE INTO company_storage (company, key, value)
+                SELECT ?, key, value FROM company_storage
+                WHERE company = 'Commerc Of Agency' AND key IN ('acc_coa', 'acc_subs', 'acc_cur', 'acc_users')
+              `).bind(id)
+            ]);
+          } catch (seedErr) {
+            console.error('Failed to auto-seed new company:', seedErr);
+          }
+
           return jsonResponse({ success: true, company: { id, name, base_currency: baseCurrency } }, 201, cors);
         }
 
@@ -362,11 +385,11 @@ export default {
 
           for (let i = 0; i < lines.length; i++) {
             const l = lines[i];
-            const dr = Number(l.base_debit || l.dr || 0);
-            const cr = Number(l.base_credit || l.cr || 0);
+            const dr = Number(l.base_debit ?? l.debit ?? l.dr ?? 0);
+            const cr = Number(l.base_credit ?? l.credit ?? l.cr ?? 0);
             totDr += dr;
             totCr += cr;
-            const c = String(l.account_code || l.code || l.gl || '').trim();
+            const c = String(l.account_code || l.accountCode || l.code || l.gl || '').trim();
             if (!c) {
               return {
                 valid: false,
@@ -669,19 +692,19 @@ export default {
             }
           }
 
-          let vNo = String(body.voucher_no || body.v || '').trim();
+          let vNo = String(body.voucher_no || body.voucherNo || body.v || '').trim();
           if (!vNo) {
             vNo = await getNextVoucherNo(company);
           }
 
           const vId = `${company}_${vNo}`;
-          const vDate = body.voucher_date || body.date || new Date().toISOString().slice(0, 10);
+          const vDate = body.voucher_date || body.voucherDate || body.date || new Date().toISOString().slice(0, 10);
           const vPeriod = body.period || body.p || vDate.slice(0, 7);
           const vDesc = body.description || body.notes || '';
           const vUser = session.username || 'admin';
           const postedAt = status === 'posted' ? new Date().toISOString() : null;
           const postedBy = status === 'posted' ? vUser : null;
-          const amendedFrom = body.amended_from || null;
+          const amendedFrom = body.amended_from || body.amendedFrom || null;
 
           const stmts = [
             env.DB.prepare(
@@ -697,19 +720,19 @@ export default {
                 'INSERT INTO voucher_lines (id, voucher_id, company_id, line_no, account_code, gl_name, sub_ledger, party, branch, currency, exchange_rate, original_debit, original_credit, base_debit, base_credit, notes, statement_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
               ).bind(
                 lineId, vId, company, idx + 1,
-                String(l.account_code || l.code || l.gl || ''),
-                String(l.gl_name || l.gl || ''),
-                String(l.sub_ledger || l.sl || ''),
+                String(l.account_code || l.accountCode || l.code || l.gl || ''),
+                String(l.gl_name || l.accountName || l.gl || ''),
+                String(l.sub_ledger || l.subLedger || l.sl || ''),
                 String(l.party || l.sup || ''),
                 String(l.branch || l.br || ''),
                 String(l.currency || l.cur || 'USD'),
-                Number(l.exchange_rate || l.rate || 1.0),
-                Number(l.original_debit || l.od || 0.0),
-                Number(l.original_credit || l.oc || 0.0),
-                Number(l.base_debit || l.dr || 0.0),
-                Number(l.base_credit || l.cr || 0.0),
-                String(l.notes || ''),
-                String(l.statement_type || l.st || 'BS')
+                Number(l.exchange_rate || l.exchangeRate || l.rate || 1.0),
+                Number(l.original_debit ?? l.originalDebit ?? l.debit ?? l.od ?? 0.0),
+                Number(l.original_credit ?? l.originalCredit ?? l.credit ?? l.oc ?? 0.0),
+                Number(l.base_debit ?? l.baseDebit ?? l.debit ?? l.dr ?? 0.0),
+                Number(l.base_credit ?? l.baseCredit ?? l.credit ?? l.cr ?? 0.0),
+                String(l.notes || l.description || ''),
+                String(l.statement_type || l.statementType || l.st || 'BS')
               )
             );
           });
@@ -805,19 +828,19 @@ export default {
                 'INSERT INTO voucher_lines (id, voucher_id, company_id, line_no, account_code, gl_name, sub_ledger, party, branch, currency, exchange_rate, original_debit, original_credit, base_debit, base_credit, notes, statement_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
               ).bind(
                 lineId, current.id, company, idx + 1,
-                String(l.account_code || l.code || l.gl || ''),
-                String(l.gl_name || l.gl || ''),
-                String(l.sub_ledger || l.sl || ''),
+                String(l.account_code || l.accountCode || l.code || l.gl || ''),
+                String(l.gl_name || l.accountName || l.gl || ''),
+                String(l.sub_ledger || l.subLedger || l.sl || ''),
                 String(l.party || l.sup || ''),
                 String(l.branch || l.br || ''),
                 String(l.currency || l.cur || 'USD'),
-                Number(l.exchange_rate || l.rate || 1.0),
-                Number(l.original_debit || l.od || 0.0),
-                Number(l.original_credit || l.oc || 0.0),
-                Number(l.base_debit || l.dr || 0.0),
-                Number(l.base_credit || l.cr || 0.0),
-                String(l.notes || ''),
-                String(l.statement_type || l.st || 'BS')
+                Number(l.exchange_rate || l.exchangeRate || l.rate || 1.0),
+                Number(l.original_debit ?? l.originalDebit ?? l.debit ?? l.od ?? 0.0),
+                Number(l.original_credit ?? l.originalCredit ?? l.credit ?? l.oc ?? 0.0),
+                Number(l.base_debit ?? l.baseDebit ?? l.debit ?? l.dr ?? 0.0),
+                Number(l.base_credit ?? l.baseCredit ?? l.credit ?? l.cr ?? 0.0),
+                String(l.notes || l.description || ''),
+                String(l.statement_type || l.statementType || l.st || 'BS')
               )
             );
           });
@@ -1101,6 +1124,43 @@ export default {
           }, 200, cors);
         }
 
+                // 17. Remote D1 Data Reset Endpoint (Admin only)
+        if (url.pathname === '/api/v2/reset' && request.method === 'POST') {
+          const session = await authenticateRequest(request, env);
+          if (!session) return problemDetails('Unauthorized', 401, 'Authentication required to reset data.', url.pathname, [], cors);
+          if (session.role !== 'admin') {
+            return problemDetails('Forbidden', 403, 'Only administrators can perform data reset.', url.pathname, [], cors);
+          }
+          const company = await resolveCompanyId(env, url.searchParams.get('company') || (session && session.company) || 'Tijarahub');
+          const body = await request.json().catch(() => ({}));
+          const groups = Array.isArray(body.groups) ? body.groups : ['tx'];
+
+          const stmts = [];
+          if (groups.includes('tx') || groups.includes('all')) {
+            stmts.push(env.DB.prepare('DELETE FROM voucher_lines WHERE voucher_id LIKE ?').bind(`${company}_%`));
+            stmts.push(env.DB.prepare('DELETE FROM vouchers WHERE company_id = ?').bind(company));
+            stmts.push(env.DB.prepare('DELETE FROM company_storage WHERE company = ? AND key = ?').bind(company, 'acc_rows'));
+          }
+          if (groups.includes('fa') || groups.includes('all')) {
+            stmts.push(env.DB.prepare('DELETE FROM fixed_assets WHERE company_id = ?').bind(company));
+            stmts.push(env.DB.prepare('DELETE FROM company_storage WHERE company = ? AND key = ?').bind(company, 'acc_fa'));
+          }
+          if (groups.includes('par') || groups.includes('all')) {
+            stmts.push(env.DB.prepare('DELETE FROM contacts WHERE company_id = ?').bind(company));
+            stmts.push(env.DB.prepare('DELETE FROM company_storage WHERE company = ? AND key = ?').bind(company, 'acc_contacts'));
+          }
+          if (groups.includes('att') || groups.includes('all')) {
+            stmts.push(env.DB.prepare('DELETE FROM attachment_chunks WHERE attachment_id IN (SELECT id FROM attachments WHERE company_id = ?)').bind(company));
+            stmts.push(env.DB.prepare('DELETE FROM attachments WHERE company_id = ?').bind(company));
+          }
+
+          if (stmts.length > 0) {
+            await env.DB.batch(stmts);
+          }
+
+          return jsonResponse({ success: true, company, resetGroups: groups }, 200, cors);
+        }
+
         // ----------------- Protected Attachments API -----------------
 
         // 1. Get attachment counts (PROTECTED)
@@ -1291,7 +1351,16 @@ export default {
 
     // Serve static assets (public/index.html, etc.)
     if (env.ASSETS) {
-      return env.ASSETS.fetch(request);
+      const assetRes = await env.ASSETS.fetch(request);
+      const newHeaders = new Headers(assetRes.headers);
+      newHeaders.set('Cache-Control', 'no-cache, no-store, must-revalidate, max-age=0');
+      newHeaders.set('Pragma', 'no-cache');
+      newHeaders.set('Expires', '0');
+      return new Response(assetRes.body, {
+        status: assetRes.status,
+        statusText: assetRes.statusText,
+        headers: newHeaders
+      });
     }
 
     return new Response('Not found', { status: 404 });
