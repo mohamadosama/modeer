@@ -121,7 +121,7 @@ paths:
 
   /api/v2/accounts/{code}:
     delete:
-      summary: Safely delete an account (Guardrail: blocked if journal lines exist)
+      summary: "Safely delete an account (Guardrail: blocked if journal lines exist)"
       operationId: deleteAccount
       parameters:
         - name: code
@@ -261,7 +261,7 @@ paths:
           $ref: '#/components/responses/ProblemDetails404'
 
     put:
-      summary: Update a DRAFT voucher (Guardrail: Posted vouchers are immutable)
+      summary: "Update a DRAFT voucher (Guardrail: Posted vouchers are immutable)"
       operationId: updateVoucher
       parameters:
         - name: id
@@ -313,7 +313,7 @@ paths:
                 $ref: '#/components/schemas/ProblemDetails'
 
     delete:
-      summary: Delete a DRAFT voucher (Guardrail: Posted records cannot be deleted)
+      summary: "Delete a DRAFT voucher (Guardrail: Posted records cannot be deleted)"
       operationId: deleteVoucher
       parameters:
         - name: id

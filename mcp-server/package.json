@@ -1,0 +1,25 @@
+{
+  "name": "modeer-mcp-server",
+  "version": "2.0.0",
+  "description": "Model Context Protocol (MCP) Server for Modeer Financial Accounting & ERP System",
+  "main": "index.js",
+  "bin": {
+    "modeer-mcp": "./bin/modeer-mcp.js"
+  },
+  "type": "module",
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "claude",
+    "claude-desktop",
+    "chatgpt",
+    "accounting",
+    "erp",
+    "double-entry"
+  ],
+  "author": "Mohamad Osama",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

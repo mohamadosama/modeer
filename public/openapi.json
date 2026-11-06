@@ -1,0 +1,1145 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Modeer Cloudflare Edge ERP & Accounting API",
+    "version": "2.0.0",
+    "description": "Enterprise-grade, multi-tenant accounting and ERP REST API running natively on Cloudflare Workers and Cloudflare D1 (SQLite). Conforms to IFRS/IAS standards with immutable posted ledgers, 4-state document lifecycle, cursor pagination, RFC 7807 problem details, and row-level ACID transactions."
+  },
+  "servers": [
+    {
+      "url": "https://modeer.modeer.workers.dev",
+      "description": "Production Cloudflare Edge Server"
+    }
+  ],
+  "security": [
+    {
+      "BearerAuth": []
+    },
+    {
+      "CookieAuth": []
+    }
+  ],
+  "paths": {
+    "/api/auth/login": {
+      "post": {
+        "summary": "Authenticate user & issue session token",
+        "operationId": "login",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "username",
+                  "password",
+                  "company"
+                ],
+                "properties": {
+                  "username": {
+                    "type": "string",
+                    "example": "mohamadosama"
+                  },
+                  "password": {
+                    "type": "string",
+                    "format": "password",
+                    "example": "mosama"
+                  },
+                  "company": {
+                    "type": "string",
+                    "example": "Commerc Of Agency"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Login successful",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoginResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/ProblemDetails401"
+          }
+        }
+      }
+    },
+    "/api/v2/accounts": {
+      "get": {
+        "summary": "List Chart of Accounts with Cursor Pagination",
+        "operationId": "listAccounts",
+        "parameters": [
+          {
+            "name": "company",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Active company identifier (defaults to session company)"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "maximum": 200
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Cursor for next page (last account code from previous page)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated collection of accounts",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "company": {
+                      "type": "string"
+                    },
+                    "limit": {
+                      "type": "integer"
+                    },
+                    "nextCursor": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Account"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/ProblemDetails401"
+          }
+        }
+      },
+      "post": {
+        "summary": "Create or update an account in Chart of Accounts",
+        "operationId": "upsertAccount",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AccountInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Account created or updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "account": {
+                      "$ref": "#/components/schemas/Account"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "$ref": "#/components/responses/ProblemDetails422"
+          }
+        }
+      }
+    },
+    "/api/v2/accounts/{code}": {
+      "delete": {
+        "summary": "Safely delete an account (Guardrail: blocked if journal lines exist)",
+        "operationId": "deleteAccount",
+        "parameters": [
+          {
+            "name": "code",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "company",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Account deleted successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "deletedCode": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Referential integrity conflict (lines exist)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/vouchers": {
+      "get": {
+        "summary": "List journal vouchers with cursor pagination and lifecycle filtering",
+        "operationId": "listVouchers",
+        "parameters": [
+          {
+            "name": "company",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "draft",
+                "posted",
+                "cancelled"
+              ]
+            },
+            "description": "Filter by document lifecycle status"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "maximum": 200
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Pagination cursor"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated journal vouchers",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "company": {
+                      "type": "string"
+                    },
+                    "limit": {
+                      "type": "integer"
+                    },
+                    "nextCursor": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Voucher"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/ProblemDetails401"
+          }
+        }
+      },
+      "post": {
+        "summary": "Create a new voucher (Draft or Posted with Double-Entry Balance Validation)",
+        "operationId": "createVoucher",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Unique idempotency key to prevent duplicate submissions"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VoucherInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Voucher created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VoucherCreatedResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unbalanced debits/credits or invalid account code",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/vouchers/{id}": {
+      "get": {
+        "summary": "Retrieve a single voucher by ID or Number",
+        "operationId": "getVoucher",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "company",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Voucher details with ETag header",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                },
+                "example": "W/\"v1\""
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VoucherDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/ProblemDetails404"
+          }
+        }
+      },
+      "put": {
+        "summary": "Update a DRAFT voucher (Guardrail: Posted vouchers are immutable)",
+        "operationId": "updateVoucher",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "ETag from previous GET to ensure optimistic concurrency"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VoucherInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Voucher updated",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "version": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Cannot modify posted/cancelled voucher",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "Precondition Failed (ETag mismatch)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete a DRAFT voucher (Guardrail: Posted records cannot be deleted)",
+        "operationId": "deleteVoucher",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Draft voucher deleted"
+          },
+          "403": {
+            "description": "Forbidden (Posted records are legally permanent)",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/vouchers/{id}/post": {
+      "post": {
+        "summary": "Submit/Post a draft voucher to the Official General Ledger",
+        "operationId": "postVoucher",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Voucher officially posted to ledger",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string",
+                      "example": "posted"
+                    },
+                    "postedAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "$ref": "#/components/responses/ProblemDetails422"
+          }
+        }
+      }
+    },
+    "/api/v2/vouchers/{id}/cancel": {
+      "post": {
+        "summary": "Cancel a posted voucher (Audit trail preserved; reason required)",
+        "operationId": "cancelVoucher",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "reason"
+                ],
+                "properties": {
+                  "reason": {
+                    "type": "string",
+                    "example": "Erroneous supplier invoice cancelled"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Voucher cancelled and excluded from Financial Statements",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "status": {
+                      "type": "string",
+                      "example": "cancelled"
+                    },
+                    "reason": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/vouchers/{id}/amend": {
+      "post": {
+        "summary": "Amend a voucher (Cancels original and creates linked draft)",
+        "operationId": "amendVoucher",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "New editable draft voucher created referencing original",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "newId": {
+                      "type": "string"
+                    },
+                    "voucherNo": {
+                      "type": "string"
+                    },
+                    "amendedFrom": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string",
+                      "example": "draft"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v2/reports/trial-balance": {
+      "get": {
+        "summary": "Compute Live Trial Balance strictly over posted vouchers",
+        "operationId": "getTrialBalance",
+        "parameters": [
+          {
+            "name": "company",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Balanced Trial Balance calculation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "company": {
+                      "type": "string"
+                    },
+                    "totalDebit": {
+                      "type": "string",
+                      "example": "334139.08"
+                    },
+                    "totalCredit": {
+                      "type": "string",
+                      "example": "334139.08"
+                    },
+                    "currency": {
+                      "type": "string",
+                      "example": "USD"
+                    },
+                    "isBalanced": {
+                      "type": "boolean",
+                      "example": true
+                    },
+                    "accounts": {
+                      "type": "array",
+                      "items": {
+                        "type": "object"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "BearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "Token"
+      },
+      "CookieAuth": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "modeer_token"
+      }
+    },
+    "schemas": {
+      "ProblemDetails": {
+        "type": "object",
+        "required": [
+          "type",
+          "title",
+          "status",
+          "detail"
+        ],
+        "properties": {
+          "type": {
+            "type": "string",
+            "format": "uri",
+            "example": "https://modeer.workers.dev/errors/422"
+          },
+          "title": {
+            "type": "string",
+            "example": "Unprocessable Entity"
+          },
+          "status": {
+            "type": "integer",
+            "example": 422
+          },
+          "detail": {
+            "type": "string",
+            "example": "Voucher is not balanced (DR != CR)"
+          },
+          "instance": {
+            "type": "string",
+            "example": "/api/v2/vouchers"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-11-05T20:20:16+00:00"
+          },
+          "errors": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "field": {
+                  "type": "string"
+                },
+                "message": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "Account": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string",
+            "example": "52020101"
+          },
+          "name": {
+            "type": "string",
+            "example": "Rent Office Egypt"
+          },
+          "nameAr": {
+            "type": "string",
+            "example": "إيجار المقر الادارة مصر"
+          },
+          "classification": {
+            "type": "string",
+            "enum": [
+              "Asset",
+              "Liability",
+              "Equity",
+              "Revenue",
+              "Expense"
+            ]
+          },
+          "sub": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "inactive"
+            ]
+          }
+        }
+      },
+      "AccountInput": {
+        "type": "object",
+        "required": [
+          "code",
+          "name",
+          "classification"
+        ],
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "nameAr": {
+            "type": "string"
+          },
+          "classification": {
+            "type": "string",
+            "enum": [
+              "Asset",
+              "Liability",
+              "Equity",
+              "Revenue",
+              "Expense"
+            ]
+          },
+          "sub": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "inactive"
+            ],
+            "default": "active"
+          }
+        }
+      },
+      "Voucher": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "voucherNo": {
+            "type": "string"
+          },
+          "voucherDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "period": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "posted",
+              "cancelled"
+            ]
+          },
+          "version": {
+            "type": "integer"
+          },
+          "postedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "postedBy": {
+            "type": "string",
+            "nullable": true
+          },
+          "amendedFrom": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "VoucherDetail": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Voucher"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "lines": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/VoucherLine"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "VoucherLine": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "lineNo": {
+            "type": "integer"
+          },
+          "accountCode": {
+            "type": "string"
+          },
+          "glName": {
+            "type": "string"
+          },
+          "party": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string",
+            "example": "USD"
+          },
+          "exchangeRate": {
+            "type": "string",
+            "example": "1.0000"
+          },
+          "originalDebit": {
+            "type": "string",
+            "example": "100.00"
+          },
+          "originalCredit": {
+            "type": "string",
+            "example": "0.00"
+          },
+          "baseDebit": {
+            "type": "string",
+            "example": "100.00"
+          },
+          "baseCredit": {
+            "type": "string",
+            "example": "0.00"
+          },
+          "statementType": {
+            "type": "string",
+            "enum": [
+              "BS",
+              "IS"
+            ]
+          }
+        }
+      },
+      "VoucherInput": {
+        "type": "object",
+        "required": [
+          "lines"
+        ],
+        "properties": {
+          "voucherNo": {
+            "type": "string"
+          },
+          "voucherDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "period": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "posted"
+            ],
+            "default": "draft"
+          },
+          "lines": {
+            "type": "array",
+            "minItems": 2,
+            "items": {
+              "type": "object",
+              "required": [
+                "accountCode"
+              ],
+              "properties": {
+                "accountCode": {
+                  "type": "string"
+                },
+                "glName": {
+                  "type": "string"
+                },
+                "subLedger": {
+                  "type": "string"
+                },
+                "party": {
+                  "type": "string"
+                },
+                "branch": {
+                  "type": "string"
+                },
+                "currency": {
+                  "type": "string",
+                  "default": "USD"
+                },
+                "exchangeRate": {
+                  "type": "number",
+                  "default": 1.0
+                },
+                "baseDebit": {
+                  "type": "number",
+                  "default": 0.0
+                },
+                "baseCredit": {
+                  "type": "number",
+                  "default": 0.0
+                },
+                "notes": {
+                  "type": "string"
+                },
+                "statementType": {
+                  "type": "string",
+                  "enum": [
+                    "BS",
+                    "IS"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "VoucherCreatedResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "voucherNo": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "linesCount": {
+            "type": "integer"
+          }
+        }
+      },
+      "LoginResponse": {
+        "type": "object",
+        "properties": {
+          "token": {
+            "type": "string"
+          },
+          "user": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "role": {
+                "type": "string"
+              }
+            }
+          },
+          "company": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "responses": {
+      "ProblemDetails401": {
+        "description": "Unauthorized (Invalid or expired token)",
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/ProblemDetails"
+            }
+          }
+        }
+      },
+      "ProblemDetails404": {
+        "description": "Resource Not Found",
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/ProblemDetails"
+            }
+          }
+        }
+      },
+      "ProblemDetails422": {
+        "description": "Business / Accounting Validation Failed",
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/ProblemDetails"
+            }
+          }
+        }
+      }
+    }
+  }
+}

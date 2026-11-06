@@ -4,12 +4,14 @@
  * Includes server-side session authentication & RBAC protection.
  */
 
+import { handleMcpRequest, MCP_TOOLS_DEFINITIONS, MCP_SERVER_INFO } from './mcp.js';
+
 function corsHeaders(request) {
   const origin = request.headers.get('Origin') || '*';
   return {
     'Access-Control-Allow-Origin': origin,
     'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With, X-API-Key, x-api-key, If-Match, Idempotency-Key',
     'Access-Control-Allow-Credentials': 'true',
     'Access-Control-Max-Age': '86400',
   };
@@ -85,14 +87,23 @@ async function verifyPassword(password, pwRecord) {
  * Extract session token from cookie or Authorization header
  */
 function getSessionToken(request) {
-  const cookieHeader = request.headers.get('Cookie') || '';
-  const match = cookieHeader.match(/modeer_session=([a-zA-Z0-9_\-]+)/);
-  if (match) return match[1];
+  try {
+    const url = new URL(request.url);
+    const qToken = url.searchParams.get('token') || url.searchParams.get('apiKey') || url.searchParams.get('api_key');
+    if (qToken) return qToken.trim();
+  } catch (e) {}
+
+  const apiKey = request.headers.get('X-API-Key') || request.headers.get('x-api-key');
+  if (apiKey) return apiKey.trim();
 
   const authHeader = request.headers.get('Authorization') || '';
   if (authHeader.startsWith('Bearer ')) {
     return authHeader.slice(7).trim();
   }
+
+  const cookieHeader = request.headers.get('Cookie') || '';
+  const match = cookieHeader.match(/modeer_session=([a-zA-Z0-9_\-]+)/);
+  if (match) return match[1];
 
   return null;
 }
@@ -135,6 +146,105 @@ export default {
     // Handle CORS preflight
     if (request.method === 'OPTIONS') {
       return new Response(null, { status: 204, headers: cors });
+    }
+
+    // Public OpenAPI Specifications & Privacy Policy for AI Assistants & ChatGPT Custom Actions
+    if (url.pathname === '/openapi.json') {
+      const assetRes = await env.ASSETS.fetch(new Request(new URL('/openapi.json', request.url), request));
+      return new Response(assetRes.body, {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/json; charset=utf-8',
+          'Access-Control-Allow-Origin': '*',
+          'Cache-Control': 'public, max-age=300'
+        }
+      });
+    }
+
+    if (url.pathname === '/openapi.yaml') {
+      const assetRes = await env.ASSETS.fetch(new Request(new URL('/openapi.yaml', request.url), request));
+      return new Response(assetRes.body, {
+        status: 200,
+        headers: {
+          'Content-Type': 'text/yaml; charset=utf-8',
+          'Access-Control-Allow-Origin': '*',
+          'Cache-Control': 'public, max-age=300'
+        }
+      });
+    }
+
+    if (url.pathname === '/privacy') {
+      const assetRes = await env.ASSETS.fetch(new Request(new URL('/privacy.html', request.url), request));
+      return new Response(assetRes.body, {
+        status: 200,
+        headers: {
+          'Content-Type': 'text/html; charset=utf-8',
+          'Access-Control-Allow-Origin': '*'
+        }
+      });
+    }
+
+    // ----------------- Model Context Protocol (MCP) Server -----------------
+    if (url.pathname === '/api/mcp' || url.pathname === '/mcp') {
+      const session = await authenticateRequest(request, env);
+      if (!session) {
+        return jsonResponse({
+          jsonrpc: '2.0',
+          id: null,
+          error: {
+            code: -32000,
+            message: 'Authentication required. Provide valid Authorization: Bearer token or X-API-Key header or ?token= query parameter.'
+          }
+        }, 401, cors);
+      }
+
+      if (request.method === 'GET') {
+        const token = getSessionToken(request) || '';
+        const stream = new ReadableStream({
+          start(controller) {
+            const encoder = new TextEncoder();
+            controller.enqueue(encoder.encode(`event: endpoint\ndata: /api/mcp?token=${encodeURIComponent(token)}\n\n`));
+            controller.close();
+          }
+        });
+        return new Response(stream, {
+          status: 200,
+          headers: {
+            'Content-Type': 'text/event-stream; charset=utf-8',
+            'Cache-Control': 'no-cache, no-transform',
+            'Connection': 'keep-alive',
+            ...cors
+          }
+        });
+      }
+
+      if (request.method === 'POST') {
+        return await handleMcpRequest(request, env, session, cors);
+      }
+    }
+
+    if (url.pathname === '/api/mcp/sse' || url.pathname === '/mcp/sse') {
+      const session = await authenticateRequest(request, env);
+      if (!session) {
+        return new Response('Unauthorized: Bearer token or ?token= required', { status: 401, headers: cors });
+      }
+      const token = getSessionToken(request) || '';
+      const stream = new ReadableStream({
+        start(controller) {
+          const encoder = new TextEncoder();
+          controller.enqueue(encoder.encode(`event: endpoint\ndata: /api/mcp?token=${encodeURIComponent(token)}\n\n`));
+          controller.close();
+        }
+      });
+      return new Response(stream, {
+        status: 200,
+        headers: {
+          'Content-Type': 'text/event-stream; charset=utf-8',
+          'Cache-Control': 'no-cache, no-transform',
+          'Connection': 'keep-alive',
+          ...cors
+        }
+      });
     }
 
     // API Routes
@@ -237,6 +347,53 @@ export default {
           }
           const clearCookie = `modeer_session=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0`;
           return jsonResponse({ success: true }, 200, { ...cors, 'Set-Cookie': clearCookie });
+        }
+
+        // 4. API Keys Management (for AI Agents & Chatbots)
+        if (url.pathname === '/api/auth/api-keys' && request.method === 'POST') {
+          const session = await authenticateRequest(request, env);
+          if (!session) return jsonResponse({ error: 'Authentication required' }, 401, cors);
+          if (session.role !== 'admin') return jsonResponse({ error: 'Admin role required' }, 403, cors);
+
+          const body = await request.json().catch(() => ({}));
+          const name = String(body.name || 'AI Bot').trim();
+          const company = await resolveCompanyId(env, body.company || session.company || 'Commerc Of Agency');
+          const role = body.role === 'viewer' ? 'viewer' : 'admin';
+          const token = `modeer_sk_live_${crypto.randomUUID().replace(/-/g, '')}${crypto.randomUUID().replace(/-/g, '').slice(0, 16)}`;
+          const expiresAt = '2099-12-31T23:59:59Z';
+
+          await env.DB.prepare(
+            'INSERT INTO sessions (token, company, user_id, username, role, created_at, expires_at) VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?)'
+          ).bind(token, company, 'ai-agent', name, role, expiresAt).run();
+
+          return jsonResponse({
+            success: true,
+            apiKey: token,
+            name,
+            company,
+            role,
+            expiresAt
+          }, 201, cors);
+        }
+
+        if (url.pathname === '/api/auth/api-keys' && request.method === 'GET') {
+          const session = await authenticateRequest(request, env);
+          if (!session || session.role !== 'admin') return jsonResponse({ error: 'Unauthorized' }, 401, cors);
+
+          const { results } = await env.DB.prepare(
+            "SELECT token, username as name, company, role, created_at, expires_at FROM sessions WHERE user_id = 'ai-agent' ORDER BY created_at DESC"
+          ).all();
+
+          return jsonResponse({
+            apiKeys: (results || []).map(k => ({
+              name: k.name,
+              company: k.company,
+              role: k.role,
+              tokenPreview: k.token.slice(0, 16) + '...' + k.token.slice(-6),
+              createdAt: k.created_at,
+              expiresAt: k.expires_at
+            }))
+          }, 200, cors);
         }
 
         // ----------------- Company Management -----------------
