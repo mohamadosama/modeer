@@ -264,6 +264,15 @@
             list = [];
             remoteLinesMap.set(vNo, list);
           }
+          const accCode = String(l.account_code || '').trim();
+          const accName = String(l.gl_name || '').trim();
+          let displayGl = accName;
+          if (accCode && accName) {
+            displayGl = accName.startsWith(accCode) ? accName : `${accCode} - ${accName}`;
+          } else if (accCode) {
+            displayGl = accCode;
+          }
+
           list.push({
             v: vNo,
             date: vHeader ? vHeader.voucher_date : '',
@@ -274,7 +283,10 @@
             oc: l.original_credit,
             dr: l.base_debit,
             cr: l.base_credit,
-            gl: l.gl_name,
+            gl: displayGl,
+            code: accCode,
+            account_code: accCode,
+            gl_name: accName,
             sl: l.sub_ledger,
             party: l.party,
             sup: l.party,

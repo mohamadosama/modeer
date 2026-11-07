@@ -1,6 +1,7 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "modeer",
+  "account_id": "66d6ee5b4ec8a87ff372c24aecfcc3e4",
   "main": "src/worker.js",
   "compatibility_date": "2024-11-01",
   "compatibility_flags": ["nodejs_compat"],

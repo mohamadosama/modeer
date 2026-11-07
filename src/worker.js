@@ -402,6 +402,102 @@ export default {
           }, 200, cors);
         }
 
+        // 5. Personal MCP Token for current logged-in user
+        if (url.pathname === '/api/user/mcp-token' && request.method === 'GET') {
+          const session = await authenticateRequest(request, env);
+          if (!session) return jsonResponse({ error: 'Authentication required' }, 401, cors);
+
+          const username = session.username;
+          const company = session.company;
+          const role = session.role || 'viewer';
+
+          // Look up existing active PAT for this user & company
+          let existing = await env.DB.prepare(
+            'SELECT token, company, user_id, username, role, created_at, expires_at FROM sessions WHERE username = ? AND company = ? AND token LIKE "modeer_pat_%" AND expires_at > datetime("now") ORDER BY created_at DESC LIMIT 1'
+          ).bind(username, company).first();
+
+          let token = existing ? existing.token : null;
+
+          if (!token) {
+            const randomBytes = new Uint8Array(12);
+            crypto.getRandomValues(randomBytes);
+            const randomPart = Array.from(randomBytes).map(b => b.toString(16).padStart(2, '0')).join('');
+            const cleanUser = username.toLowerCase().replace(/[^a-z0-9]/g, '') || 'user';
+            token = `modeer_pat_${cleanUser}_${randomPart}`;
+            const userId = session.user_id || `usr_${cleanUser}`;
+            const expiresAt = '2035-01-01T00:00:00.000Z';
+
+            await env.DB.prepare(
+              'INSERT INTO sessions (token, company, user_id, username, role, created_at, expires_at) VALUES (?, ?, ?, ?, ?, datetime("now"), ?)'
+            ).bind(token, company, userId, username, role, expiresAt).run();
+          }
+
+          const canDraft = ['accountant', 'manager', 'admin'].includes(role);
+          const canPost = ['manager', 'admin'].includes(role);
+          const canManage = role === 'admin';
+
+          return jsonResponse({
+            token,
+            username,
+            company,
+            role,
+            permissions: {
+              role_ar: role === 'admin' ? 'مدير النظام (Admin)' : role === 'manager' ? 'مدير مالي (Manager)' : role === 'accountant' ? 'محاسب (Accountant)' : 'مشاهد (Viewer)',
+              can_view: true,
+              can_draft: canDraft,
+              can_post: canPost,
+              can_cancel_amend: canPost,
+              can_manage_companies: canManage
+            }
+          }, 200, cors);
+        }
+
+        if (url.pathname === '/api/user/mcp-token/regenerate' && request.method === 'POST') {
+          const session = await authenticateRequest(request, env);
+          if (!session) return jsonResponse({ error: 'Authentication required' }, 401, cors);
+
+          const username = session.username;
+          const company = session.company;
+          const role = session.role || 'viewer';
+
+          // Revoke old PATs for this user and company
+          await env.DB.prepare(
+            'DELETE FROM sessions WHERE username = ? AND company = ? AND token LIKE "modeer_pat_%"'
+          ).bind(username, company).run();
+
+          const randomBytes = new Uint8Array(12);
+          crypto.getRandomValues(randomBytes);
+          const randomPart = Array.from(randomBytes).map(b => b.toString(16).padStart(2, '0')).join('');
+          const cleanUser = username.toLowerCase().replace(/[^a-z0-9]/g, '') || 'user';
+          const token = `modeer_pat_${cleanUser}_${randomPart}`;
+          const userId = session.user_id || `usr_${cleanUser}`;
+          const expiresAt = '2035-01-01T00:00:00.000Z';
+
+          await env.DB.prepare(
+            'INSERT INTO sessions (token, company, user_id, username, role, created_at, expires_at) VALUES (?, ?, ?, ?, ?, datetime("now"), ?)'
+          ).bind(token, company, userId, username, role, expiresAt).run();
+
+          const canDraft = ['accountant', 'manager', 'admin'].includes(role);
+          const canPost = ['manager', 'admin'].includes(role);
+          const canManage = role === 'admin';
+
+          return jsonResponse({
+            success: true,
+            token,
+            username,
+            company,
+            role,
+            permissions: {
+              role_ar: role === 'admin' ? 'مدير النظام (Admin)' : role === 'manager' ? 'مدير مالي (Manager)' : role === 'accountant' ? 'محاسب (Accountant)' : 'مشاهد (Viewer)',
+              can_view: true,
+              can_draft: canDraft,
+              can_post: canPost,
+              can_cancel_amend: canPost,
+              can_manage_companies: canManage
+            }
+          }, 200, cors);
+        }
+
         // ----------------- Company Management -----------------
 
         // List companies (public list of company names for selector)
@@ -578,25 +674,29 @@ export default {
           }
 
           const uniqueCodes = [...new Set(codes)];
-          for (const code of uniqueCodes) {
+          for (const rawCode of uniqueCodes) {
+            let codeClean = rawCode;
+            const m = rawCode.match(/^(\d+)/);
+            if (m) codeClean = m[1];
+
             const acc = await env.DB.prepare(
-              'SELECT code, is_active FROM accounts WHERE company_id = ? AND (code = ? OR name = ?)'
-            ).bind(company, code, code).first();
+              'SELECT code, is_active FROM accounts WHERE company_id = ? AND (code = ? OR code = ? OR LOWER(name) = LOWER(?) OR name_ar = ? OR (code || " - " || name) = ? OR (code || " - " || name_ar) = ?)'
+            ).bind(company, rawCode, codeClean, rawCode, rawCode, rawCode, rawCode).first();
 
             if (!acc) {
               return {
                 valid: false,
                 title: 'Unknown Account Code',
-                error: `Account "${code}" does not exist in Chart of Accounts for company "${company}".`,
-                errors: [{ field: 'account_code', message: `Account "${code}" not found in COA.` }]
+                error: `Account "${rawCode}" does not exist in Chart of Accounts for company "${company}".`,
+                errors: [{ field: 'account_code', message: `Account "${rawCode}" not found in COA.` }]
               };
             }
             if (acc.is_active === 0) {
               return {
                 valid: false,
                 title: 'Inactive Account Code',
-                error: `Account "${code}" is deactivated and cannot accept new ledger postings.`,
-                errors: [{ field: 'account_code', message: `Account "${code}" is deactivated.` }]
+                error: `Account "${rawCode}" is deactivated and cannot accept new ledger postings.`,
+                errors: [{ field: 'account_code', message: `Account "${rawCode}" is deactivated.` }]
               };
             }
           }
@@ -876,15 +976,49 @@ export default {
             env.DB.prepare('DELETE FROM voucher_lines WHERE voucher_id = ?').bind(vId)
           ];
 
+          const { results: accList } = await env.DB.prepare(
+            'SELECT code, name, name_ar FROM accounts WHERE company_id = ?'
+          ).bind(company).all();
+          const accByCode = new Map();
+          const accByName = new Map();
+          for (const a of accList || []) {
+            if (a.code) accByCode.set(a.code, a);
+            if (a.name) accByName.set(a.name.toLowerCase(), a);
+            if (a.name_ar) accByName.set(a.name_ar, a);
+          }
+
           lines.forEach((l, idx) => {
             const lineId = `${vId}_${idx + 1}`;
+            let code = String(l.account_code || l.accountCode || l.code || '').trim();
+            let name = String(l.gl_name || l.accountName || '').trim();
+
+            if (!code && l.gl) {
+              const s = String(l.gl).trim();
+              const m = s.match(/^(\d+)/);
+              if (m) {
+                code = m[1];
+                name = s.replace(/^\d+\s*[-:]*\s*/, '').trim() || name;
+              } else {
+                name = s;
+              }
+            }
+
+            if (code && accByCode.has(code)) {
+              const matched = accByCode.get(code);
+              if (!name || name === code) name = matched.name || matched.name_ar;
+            } else if (!code && name && accByName.has(name.toLowerCase())) {
+              const matched = accByName.get(name.toLowerCase());
+              code = matched.code;
+              name = matched.name || matched.name_ar;
+            }
+
             stmts.push(
               env.DB.prepare(
                 'INSERT INTO voucher_lines (id, voucher_id, company_id, line_no, account_code, gl_name, sub_ledger, party, branch, currency, exchange_rate, original_debit, original_credit, base_debit, base_credit, notes, statement_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
               ).bind(
                 lineId, vId, company, idx + 1,
-                String(l.account_code || l.accountCode || l.code || l.gl || ''),
-                String(l.gl_name || l.accountName || l.gl || ''),
+                code,
+                name || code || 'Unclassified Account',
                 String(l.sub_ledger || l.subLedger || l.sl || ''),
                 String(l.party || l.sup || ''),
                 String(l.branch || l.br || ''),
@@ -984,15 +1118,49 @@ export default {
             env.DB.prepare('DELETE FROM voucher_lines WHERE voucher_id = ?').bind(current.id)
           ];
 
+          const { results: accListPut } = await env.DB.prepare(
+            'SELECT code, name, name_ar FROM accounts WHERE company_id = ?'
+          ).bind(company).all();
+          const accByCodePut = new Map();
+          const accByNamePut = new Map();
+          for (const a of accListPut || []) {
+            if (a.code) accByCodePut.set(a.code, a);
+            if (a.name) accByNamePut.set(a.name.toLowerCase(), a);
+            if (a.name_ar) accByNamePut.set(a.name_ar, a);
+          }
+
           lines.forEach((l, idx) => {
             const lineId = `${current.id}_${idx + 1}`;
+            let code = String(l.account_code || l.accountCode || l.code || '').trim();
+            let name = String(l.gl_name || l.accountName || '').trim();
+
+            if (!code && l.gl) {
+              const s = String(l.gl).trim();
+              const m = s.match(/^(\d+)/);
+              if (m) {
+                code = m[1];
+                name = s.replace(/^\d+\s*[-:]*\s*/, '').trim() || name;
+              } else {
+                name = s;
+              }
+            }
+
+            if (code && accByCodePut.has(code)) {
+              const matched = accByCodePut.get(code);
+              if (!name || name === code) name = matched.name || matched.name_ar;
+            } else if (!code && name && accByNamePut.has(name.toLowerCase())) {
+              const matched = accByNamePut.get(name.toLowerCase());
+              code = matched.code;
+              name = matched.name || matched.name_ar;
+            }
+
             stmts.push(
               env.DB.prepare(
                 'INSERT INTO voucher_lines (id, voucher_id, company_id, line_no, account_code, gl_name, sub_ledger, party, branch, currency, exchange_rate, original_debit, original_credit, base_debit, base_credit, notes, statement_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
               ).bind(
                 lineId, current.id, company, idx + 1,
-                String(l.account_code || l.accountCode || l.code || l.gl || ''),
-                String(l.gl_name || l.accountName || l.gl || ''),
+                code,
+                name || code || 'Unclassified Account',
                 String(l.sub_ledger || l.subLedger || l.sl || ''),
                 String(l.party || l.sup || ''),
                 String(l.branch || l.br || ''),

@@ -476,6 +476,29 @@
     const DB_VER = 1;
     const STORE_NAME = 'f';
 
+    function blobToUrl(b) {
+      return new Promise((resolve) => {
+        if (!b) return resolve('');
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = () => resolve('');
+        reader.readAsDataURL(b);
+      });
+    }
+
+    function urlToBlob(u) {
+      return Promise.resolve().then(() => {
+        if (!u) return new Blob([], { type: 'application/octet-stream' });
+        const parts = String(u || '').split(',');
+        if (parts.length < 2) return new Blob([], { type: 'application/octet-stream' });
+        const mime = (parts[0].match(/:(.*?)[;,]/) || [])[1] || 'application/octet-stream';
+        const bin = atob(parts[1]);
+        const arr = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+        return new Blob([arr], { type: mime });
+      });
+    }
+
     function openLocalDB() {
       return new Promise((resolve, reject) => {
         const req = indexedDB.open(DB_NAME, DB_VER);
@@ -559,14 +582,20 @@
       },
 
       async get(id) {
-        const cached = await localGet(id);
-        if (cached && cached.data) return cached;
+        let cached = await localGet(id);
+        if (cached && cached.data) {
+          if (!cached.blob) cached.blob = await urlToBlob(cached.data);
+          return cached;
+        }
 
         try {
           const res = await fetch(`/api/files/${encodeURIComponent(id)}`);
           if (res.ok) {
             const data = await res.json();
             if (data.file) {
+              if (data.file.data && !data.file.blob) {
+                data.file.blob = await urlToBlob(data.file.data);
+              }
               await localPut(data.file);
               return data.file;
             }
@@ -577,31 +606,66 @@
 
       async list(owner) {
         const co = getActiveCompany();
+        let files = [];
         try {
           const res = await fetch(
             `/api/files?company=${encodeURIComponent(co)}&owner=${encodeURIComponent(owner)}`
           );
           if (res.ok) {
             const data = await res.json();
-            const files = data.files || [];
-            for (const f of files) {
-              if (f.data) await localPut(f);
-            }
-            return files;
+            files = data.files || [];
           }
         } catch (e) {}
-        return [];
+
+        if (!files.length) {
+          try {
+            const db = await openLocalDB();
+            const tx = db.transaction(STORE_NAME, 'readonly');
+            const req = tx.objectStore(STORE_NAME).index('owner').getAll(owner);
+            files = await new Promise((resolve) => {
+              req.onsuccess = () => resolve(req.result || []);
+              req.onerror = () => resolve([]);
+            });
+          } catch (e) {}
+        }
+
+        for (let i = 0; i < files.length; i++) {
+          const f = files[i];
+          if (!f.blob && f.data) {
+            f.blob = await urlToBlob(f.data);
+          }
+          if (f.data) await localPut(f);
+        }
+
+        return files;
       },
 
-      async save(file) {
+      async put(file) {
         const co = getActiveCompany();
-        await localPut(file);
+        const f = { ...file };
+        if (f.blob && (!f.data || f.data.length === 0)) {
+          f.data = await blobToUrl(f.blob);
+        }
+        if (!f.blob && f.data) {
+          f.blob = await urlToBlob(f.data);
+        }
+        await localPut(f);
 
         try {
+          const payload = {
+            id: f.id,
+            owner: f.owner,
+            cat: f.cat,
+            name: f.name,
+            type: f.type,
+            size: f.size,
+            at: f.at,
+            data: f.data
+          };
           const res = await fetch(`/api/files?company=${encodeURIComponent(co)}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(file),
+            body: JSON.stringify(payload),
           });
           return res.ok;
         } catch (e) {
@@ -609,10 +673,15 @@
         }
       },
 
-      async delete(id) {
+      async save(file) {
+        return this.put(file);
+      },
+
+      async del(id) {
         await localDel(id);
+        const co = getActiveCompany();
         try {
-          const res = await fetch(`/api/files/${encodeURIComponent(id)}`, {
+          const res = await fetch(`/api/files/${encodeURIComponent(id)}?company=${encodeURIComponent(co)}`, {
             method: 'DELETE',
           });
           return res.ok;
@@ -621,11 +690,41 @@
         }
       },
 
+      async delete(id) {
+        return this.del(id);
+      },
+
       async clear() {
         const co = getActiveCompany();
         try {
-          await fetch(`/api/files/clear?company=${encodeURIComponent(co)}`, { method: 'POST' });
+          await fetch(`/api/files/clear?company=${encodeURIComponent(co)}`, { method: 'POST', credentials: 'include' });
         } catch (e) {}
+      },
+
+      async exportAll() {
+        const files = await this.all();
+        const out = [];
+        for (const f of files) {
+          const dataUrl = f.data || (f.blob ? await blobToUrl(f.blob) : '');
+          out.push({
+            id: f.id,
+            owner: f.owner,
+            cat: f.cat,
+            name: f.name,
+            type: f.type,
+            size: f.size,
+            at: f.at,
+            data: dataUrl
+          });
+        }
+        return out;
+      },
+
+      async importAll(arr) {
+        if (!Array.isArray(arr)) return;
+        for (const item of arr) {
+          await this.put(item);
+        }
       },
 
       async syncLocalToCloud() {
@@ -640,8 +739,8 @@
             const cloudIds = new Set(cloudFiles.map((f) => f.id));
 
             for (const f of localFiles) {
-              if (!cloudIds.has(f.id) && f.data) {
-                await ModeerFS.save(f);
+              if (!cloudIds.has(f.id) && (f.data || f.blob)) {
+                await ModeerFS.put(f);
               }
             }
           };
@@ -682,6 +781,7 @@
           setupDesktopPolyfill(co, localStorage.getItem('acc_base') || 'USD');
           try {
             sessionStorage.setItem('sess_uid', String(data.user.id));
+            if (data.token) sessionStorage.setItem('modeer_session_token', String(data.token));
           } catch (e) {}
 
           updateStatus('connected');

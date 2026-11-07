@@ -370,13 +370,25 @@ async function handleCreateVoucher(env, args, session) {
     totDr += dr;
     totCr += cr;
 
-    const code = String(l.account_code || l.accountCode || l.code || '').trim();
+    let code = String(l.account_code || l.accountCode || l.code || '').trim();
+    if (!code && l.gl) {
+      const s = String(l.gl).trim();
+      const m = s.match(/^(\d+)/);
+      code = m ? m[1] : s;
+    }
     if (!code) {
       throw new Error(`Line ${i + 1} does not specify an account_code.`);
     }
 
     if (status === 'posted') {
-      const acc = await env.DB.prepare('SELECT code, is_active FROM accounts WHERE company_id = ? AND (code = ? OR name = ?)').bind(company, code, code).first();
+      let codeClean = code;
+      const m = code.match(/^(\d+)/);
+      if (m) codeClean = m[1];
+
+      const acc = await env.DB.prepare(
+        'SELECT code, is_active FROM accounts WHERE company_id = ? AND (code = ? OR code = ? OR LOWER(name) = LOWER(?) OR name_ar = ? OR (code || " - " || name) = ? OR (code || " - " || name_ar) = ?)'
+      ).bind(company, code, codeClean, code, code, code, code).first();
+
       if (!acc) throw new Error(`Account code "${code}" does not exist in Chart of Accounts for "${company}".`);
       if (acc.is_active === 0) throw new Error(`Account "${code}" is deactivated.`);
     }
@@ -408,15 +420,49 @@ async function handleCreateVoucher(env, args, session) {
     env.DB.prepare('DELETE FROM voucher_lines WHERE voucher_id = ?').bind(vId)
   ];
 
+  const { results: accListMcp } = await env.DB.prepare(
+    'SELECT code, name, name_ar FROM accounts WHERE company_id = ?'
+  ).bind(company).all();
+  const accByCodeMcp = new Map();
+  const accByNameMcp = new Map();
+  for (const a of accListMcp || []) {
+    if (a.code) accByCodeMcp.set(a.code, a);
+    if (a.name) accByNameMcp.set(a.name.toLowerCase(), a);
+    if (a.name_ar) accByNameMcp.set(a.name_ar, a);
+  }
+
   lines.forEach((l, idx) => {
     const lineId = `${vId}_${idx + 1}`;
+    let code = String(l.account_code || l.accountCode || l.code || '').trim();
+    let name = String(l.gl_name || l.accountName || '').trim();
+
+    if (!code && l.gl) {
+      const s = String(l.gl).trim();
+      const m = s.match(/^(\d+)/);
+      if (m) {
+        code = m[1];
+        name = s.replace(/^\d+\s*[-:]*\s*/, '').trim() || name;
+      } else {
+        name = s;
+      }
+    }
+
+    if (code && accByCodeMcp.has(code)) {
+      const matched = accByCodeMcp.get(code);
+      if (!name || name === code) name = matched.name || matched.name_ar;
+    } else if (!code && name && accByNameMcp.has(name.toLowerCase())) {
+      const matched = accByNameMcp.get(name.toLowerCase());
+      code = matched.code;
+      name = matched.name || matched.name_ar;
+    }
+
     stmts.push(
       env.DB.prepare(
         'INSERT INTO voucher_lines (id, voucher_id, company_id, line_no, account_code, gl_name, sub_ledger, party, branch, currency, exchange_rate, original_debit, original_credit, base_debit, base_credit, notes, statement_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
       ).bind(
         lineId, vId, company, idx + 1,
-        String(l.account_code || l.accountCode || l.code || ''),
-        String(l.gl_name || l.accountName || l.notes || ''),
+        code,
+        name || code || 'Unclassified Account',
         String(l.sub_ledger || l.subLedger || ''),
         String(l.party || ''),
         String(l.branch || ''),
