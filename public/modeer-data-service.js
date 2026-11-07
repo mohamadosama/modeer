@@ -211,10 +211,12 @@
     async syncLedgerDelta(company) {
       try {
         let lastSync = localStorage.getItem('modeer_last_v_sync') || '1970-01-01T00:00:00.000Z';
+        const isInitialSync = !window.__modeer_initial_sync_done;
+        window.__modeer_initial_sync_done = true;
 
         // 1. FAST PING: Ask server if any changes happened since last sync
         const ping = await this.checkUpdates(company, lastSync);
-        if (!ping || !ping.has_updates) {
+        if (!isInitialSync && (!ping || !ping.has_updates)) {
           // Server reports no updates! Exit immediately without downloading vouchers.
           return { updated: false, count: 0, checked: true };
         }
