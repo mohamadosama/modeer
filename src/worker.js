@@ -658,6 +658,18 @@ export default {
               };
             }
             codes.push(c);
+
+            // Mandatory Exchange Rate Validation for Non-Base Currency
+            const cur = String(l.currency || l.cur || 'USD').trim().toUpperCase();
+            const rate = Number(l.exchange_rate ?? l.exchangeRate ?? l.rate ?? 0);
+            if (cur !== 'USD' && (!rate || rate <= 0 || isNaN(rate))) {
+              return {
+                valid: false,
+                title: 'Invalid Exchange Rate',
+                error: `Exchange rate is mandatory and must be greater than zero for non-base currency (${cur}) at line ${i + 1}.`,
+                errors: [{ field: `lines[${i}].exchange_rate`, message: 'Valid exchange rate > 0 is mandatory for foreign currencies.' }]
+              };
+            }
           }
 
           if (Math.abs(totDr - totCr) > 0.005) {
@@ -960,19 +972,54 @@ export default {
             vNo = await getNextVoucherNo(company);
           }
 
-          const vId = `${company}_${vNo}`;
-          const vDate = body.voucher_date || body.voucherDate || body.date || new Date().toISOString().slice(0, 10);
+          const existingVoucher = await env.DB.prepare(
+            'SELECT * FROM vouchers WHERE company_id = ? AND voucher_no = ?'
+          ).bind(company, vNo).first();
+
+          let vId = `${company}_${vNo}`;
+          let isUpdateDraft = false;
+          let currentVer = 1;
+
+          if (existingVoucher) {
+            if (existingVoucher.status === 'draft') {
+              isUpdateDraft = true;
+              vId = existingVoucher.id;
+              currentVer = (existingVoucher.version || 1) + 1;
+            } else {
+              // Existing voucher is posted or cancelled
+              if (!body.voucher_no && !body.voucherNo && !body.v) {
+                // Auto-assigned voucher collided, take next available
+                vNo = await getNextVoucherNo(company);
+                vId = `${company}_${vNo}`;
+              } else {
+                return problemDetails(
+                  'Conflict',
+                  409,
+                  `Voucher number "${vNo}" already exists with status "${existingVoucher.status}". Accounting records cannot be overwritten.`,
+                  url.pathname,
+                  [{ field: 'voucher_no', message: `Already exists as ${existingVoucher.status}` }],
+                  cors
+                );
+              }
+            }
+          }
+
+          const vDate = body.voucher_date || body.voucherDate || body.date || (isUpdateDraft ? existingVoucher.voucher_date : new Date().toISOString().slice(0, 10));
           const vPeriod = body.period || body.p || vDate.slice(0, 7);
-          const vDesc = body.description || body.notes || '';
+          const vDesc = body.description !== undefined ? body.description : (isUpdateDraft ? existingVoucher.description : (body.notes || ''));
           const vUser = session.username || 'admin';
           const postedAt = status === 'posted' ? new Date().toISOString() : null;
           const postedBy = status === 'posted' ? vUser : null;
-          const amendedFrom = body.amended_from || body.amendedFrom || null;
+          const amendedFrom = body.amended_from || body.amendedFrom || (isUpdateDraft ? existingVoucher.amended_from : null);
 
           const stmts = [
-            env.DB.prepare(
-              'INSERT INTO vouchers (id, company_id, voucher_no, voucher_date, period, description, created_by, status, posted_at, posted_by, amended_from, version, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, CURRENT_TIMESTAMP)'
-            ).bind(vId, company, vNo, vDate, vPeriod, vDesc, vUser, status, postedAt, postedBy, amendedFrom),
+            isUpdateDraft
+              ? env.DB.prepare(
+                  'UPDATE vouchers SET voucher_date = ?, period = ?, description = ?, created_by = ?, status = ?, posted_at = ?, posted_by = ?, amended_from = ?, version = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?'
+                ).bind(vDate, vPeriod, vDesc, existingVoucher.created_by || vUser, status, postedAt, postedBy, amendedFrom, currentVer, vId)
+              : env.DB.prepare(
+                  'INSERT INTO vouchers (id, company_id, voucher_no, voucher_date, period, description, created_by, status, posted_at, posted_by, amended_from, version, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, CURRENT_TIMESTAMP)'
+                ).bind(vId, company, vNo, vDate, vPeriod, vDesc, vUser, status, postedAt, postedBy, amendedFrom),
             env.DB.prepare('DELETE FROM voucher_lines WHERE voucher_id = ?').bind(vId)
           ];
 
@@ -1042,20 +1089,21 @@ export default {
             status,
             linesCount: lines.length,
             createdAt: new Date().toISOString(),
-            version: 1
+            version: currentVer,
+            isUpdated: isUpdateDraft
           };
           const responseBody = JSON.stringify(responsePayload);
 
           if (idempotencyKey) {
             try {
               await env.DB.prepare(
-                'INSERT OR REPLACE INTO idempotency_keys (key, company_id, endpoint, response_status, response_body) VALUES (?, ?, ?, 201, ?)'
-              ).bind(idempotencyKey, company, url.pathname, responseBody).run();
+                'INSERT OR REPLACE INTO idempotency_keys (key, company_id, endpoint, response_status, response_body) VALUES (?, ?, ?, ?, ?)'
+              ).bind(idempotencyKey, company, url.pathname, isUpdateDraft ? 200 : 201, responseBody).run();
             } catch (e) {}
           }
 
-          return jsonResponse(responsePayload, 201, {
-            ETag: 'W/"v1"',
+          return jsonResponse(responsePayload, isUpdateDraft ? 200 : 201, {
+            ETag: `W/"v${currentVer}"`,
             ...cors
           });
         }

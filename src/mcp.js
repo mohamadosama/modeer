@@ -380,6 +380,12 @@ async function handleCreateVoucher(env, args, session) {
       throw new Error(`Line ${i + 1} does not specify an account_code.`);
     }
 
+    const cur = String(l.currency || 'USD').trim().toUpperCase();
+    const rate = Number(l.exchange_rate || l.exchangeRate || 0);
+    if (cur !== 'USD' && (!rate || rate <= 0 || isNaN(rate))) {
+      throw new Error(`Exchange rate is mandatory and must be greater than zero for non-base currency (${cur}) at line ${i + 1}.`);
+    }
+
     if (status === 'posted') {
       let codeClean = code;
       const m = code.match(/^(\d+)/);
@@ -405,18 +411,46 @@ async function handleCreateVoucher(env, args, session) {
     vNo = isNaN(num) ? String(Date.now()).slice(-6) : String(num + 1);
   }
 
-  const vId = `${company}_${vNo}`;
-  const vDate = args.date || new Date().toISOString().slice(0, 10);
+  const existingVoucher = await env.DB.prepare(
+    'SELECT * FROM vouchers WHERE company_id = ? AND voucher_no = ?'
+  ).bind(company, vNo).first();
+
+  let vId = `${company}_${vNo}`;
+  let isUpdateDraft = false;
+  let currentVer = 1;
+
+  if (existingVoucher) {
+    if (existingVoucher.status === 'draft') {
+      isUpdateDraft = true;
+      vId = existingVoucher.id;
+      currentVer = (existingVoucher.version || 1) + 1;
+    } else {
+      if (!args.voucher_no) {
+        const row = await env.DB.prepare('SELECT voucher_no FROM vouchers WHERE company_id = ? ORDER BY CAST(voucher_no AS INTEGER) DESC LIMIT 1').bind(company).first();
+        const num = row && row.voucher_no ? parseInt(row.voucher_no, 10) : 0;
+        vNo = String(num + 1);
+        vId = `${company}_${vNo}`;
+      } else {
+        throw new Error(`Voucher number "${vNo}" already exists with status "${existingVoucher.status}". Accounting records cannot be overwritten.`);
+      }
+    }
+  }
+
+  const vDate = args.date || (isUpdateDraft ? existingVoucher.voucher_date : new Date().toISOString().slice(0, 10));
   const vPeriod = vDate.slice(0, 7);
-  const vDesc = args.description || '';
+  const vDesc = args.description !== undefined ? args.description : (isUpdateDraft ? existingVoucher.description : '');
   const vUser = (session && session.username) || 'ai-agent';
   const postedAt = status === 'posted' ? new Date().toISOString() : null;
   const postedBy = status === 'posted' ? vUser : null;
 
   const stmts = [
-    env.DB.prepare(
-      'INSERT INTO vouchers (id, company_id, voucher_no, voucher_date, period, description, created_by, status, posted_at, posted_by, version, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, CURRENT_TIMESTAMP)'
-    ).bind(vId, company, vNo, vDate, vPeriod, vDesc, vUser, status, postedAt, postedBy),
+    isUpdateDraft
+      ? env.DB.prepare(
+          'UPDATE vouchers SET voucher_date = ?, period = ?, description = ?, status = ?, posted_at = ?, posted_by = ?, version = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?'
+        ).bind(vDate, vPeriod, vDesc, status, postedAt, postedBy, currentVer, vId)
+      : env.DB.prepare(
+          'INSERT INTO vouchers (id, company_id, voucher_no, voucher_date, period, description, created_by, status, posted_at, posted_by, version, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, CURRENT_TIMESTAMP)'
+        ).bind(vId, company, vNo, vDate, vPeriod, vDesc, vUser, status, postedAt, postedBy),
     env.DB.prepare('DELETE FROM voucher_lines WHERE voucher_id = ?').bind(vId)
   ];
 

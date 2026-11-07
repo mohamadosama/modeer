@@ -59,18 +59,9 @@
       company: company,
       baseCur: baseCur || 'USD',
       saveFullBackup: async (txt) => {
-        try {
-          const blob = new Blob([txt], { type: 'application/json' });
-          const a = document.createElement('a');
-          a.href = URL.createObjectURL(blob);
-          a.download = `backup-${company}-${new Date().toISOString().slice(0, 10)}.json`;
-          document.body.appendChild(a);
-          a.click();
-          a.remove();
-          return true;
-        } catch (e) {
-          return false;
-        }
+        // Unsolicited automatic file downloads are disabled in the web browser.
+        // Users can download backups on demand using the dedicated "Download backup" button.
+        return true;
       },
       savePdf: (name) => {
         window.print();

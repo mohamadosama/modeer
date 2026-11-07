@@ -313,10 +313,15 @@
               newCount++;
             }
           } else {
-            // Check if status changed (e.g. cancelled)
+            // Check if status changed (e.g. cancelled) or if draft lines changed
             const currentStatus = localVLines[0].status || 'posted';
             if (v.status !== currentStatus) {
               localVLines.forEach(l => { l.status = v.status; });
+              changed = true;
+            }
+            if (v.status === 'draft' && remoteVLines.length > 0) {
+              localRows = localRows.filter(r => r.v !== vNo);
+              localRows.push(...remoteVLines);
               changed = true;
             }
           }
